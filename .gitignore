@@ -1,0 +1,31 @@
+.DS_Store
+.env
+.env.*
+
+.idea/
+.vscode/
+
+node_modules/
+dist/
+build/
+coverage/
+.cache/
+*.log
+
+# Vite
+vite.config.ts.timestamp-*
+
+# TypeScript
+*.tsbuildinfo
+
+# Go
+bin/
+pkg/
+*.test
+*.out
+coverage.out
+
+# Local runtime data
+tmp/
+temp/
+uploads/
