@@ -168,7 +168,7 @@ func TestAdminMeReturnsIdentityFromSession(t *testing.T) {
 	admin := createRouterTestAdminWithAccess(t, db, adminAccess{
 		username: "reviewer",
 		password: "s3cret-pass",
-		role:     model.AdminRoleAdmin,
+		role:     string(model.AdminRoleAdmin),
 		permissions: []model.AdminPermission{
 			model.AdminPermissionReviewSubmissions,
 			model.AdminPermissionManageTags,
@@ -207,7 +207,7 @@ func TestAdminMeReturnsIdentityFromSession(t *testing.T) {
 	if response.Admin.ID != admin.ID {
 		t.Fatalf("expected admin id %q, got %q", admin.ID, response.Admin.ID)
 	}
-	if response.Admin.Role != model.AdminRoleAdmin {
+	if response.Admin.Role != string(model.AdminRoleAdmin) {
 		t.Fatalf("expected role %q, got %q", model.AdminRoleAdmin, response.Admin.Role)
 	}
 	if len(response.Admin.Permissions) != 2 {
@@ -220,7 +220,7 @@ func TestPermissionMiddlewareRejectsUnauthorizedPermission(t *testing.T) {
 	admin := createRouterTestAdminWithAccess(t, db, adminAccess{
 		username: "reviewer",
 		password: "s3cret-pass",
-		role:     model.AdminRoleAdmin,
+		role:     string(model.AdminRoleAdmin),
 		permissions: []model.AdminPermission{
 			model.AdminPermissionReviewSubmissions,
 		},
@@ -249,7 +249,7 @@ func TestPermissionMiddlewareAllowsGrantedPermission(t *testing.T) {
 	admin := createRouterTestAdminWithAccess(t, db, adminAccess{
 		username: "reviewer",
 		password: "s3cret-pass",
-		role:     model.AdminRoleAdmin,
+		role:     string(model.AdminRoleAdmin),
 		permissions: []model.AdminPermission{
 			model.AdminPermissionReviewSubmissions,
 		},
@@ -278,7 +278,7 @@ func TestPermissionMiddlewareAllowsSuperAdminBypass(t *testing.T) {
 	admin := createRouterTestAdminWithAccess(t, db, adminAccess{
 		username:    "superadmin",
 		password:    "s3cret-pass",
-		role:        model.AdminRoleSuperAdmin,
+		role:        string(model.AdminRoleSuperAdmin),
 		permissions: nil,
 	})
 	manager := newRouterSessionManager(db)
@@ -342,7 +342,7 @@ func createRouterTestAdmin(t *testing.T, db *gorm.DB, username, password string)
 	return createRouterTestAdminWithAccess(t, db, adminAccess{
 		username: username,
 		password: password,
-		role:     model.AdminRoleSuperAdmin,
+		role:     string(model.AdminRoleSuperAdmin),
 	})
 }
 

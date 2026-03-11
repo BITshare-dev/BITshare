@@ -1,13 +1,16 @@
 package model
 
 import (
+	"errors"
 	"slices"
 	"strings"
 )
 
+type AdminRole string
+
 const (
-	AdminRoleSuperAdmin = "super_admin"
-	AdminRoleAdmin      = "admin"
+	AdminRoleSuperAdmin AdminRole = "super_admin"
+	AdminRoleAdmin      AdminRole = "admin"
 )
 
 type AdminPermission string
@@ -32,16 +35,79 @@ var validAdminPermissions = map[AdminPermission]struct{}{
 	AdminPermissionManageSystem:        {},
 }
 
+var validAdminRoles = map[AdminRole]struct{}{
+	AdminRoleSuperAdmin: {},
+	AdminRoleAdmin:      {},
+}
+
+var validAdminStatuses = map[AdminStatus]struct{}{
+	AdminStatusActive:   {},
+	AdminStatusDisabled: {},
+}
+
 func (a Admin) PermissionList() []AdminPermission {
 	return ParseAdminPermissions(a.Permissions)
 }
 
 func (a Admin) HasPermission(permission AdminPermission) bool {
-	if a.Role == AdminRoleSuperAdmin {
+	if a.Role == string(AdminRoleSuperAdmin) {
 		return true
 	}
 
 	return slices.Contains(a.PermissionList(), permission)
+}
+
+func (a Admin) RoleValue() AdminRole {
+	return NormalizeAdminRole(a.Role)
+}
+
+func (a Admin) IsActive() bool {
+	return a.Status == AdminStatusActive
+}
+
+func DefaultAdminPermissions(role AdminRole) []AdminPermission {
+	switch NormalizeAdminRole(string(role)) {
+	case AdminRoleAdmin:
+		return []AdminPermission{AdminPermissionReviewSubmissions}
+	case AdminRoleSuperAdmin:
+		return nil
+	default:
+		return nil
+	}
+}
+
+func NormalizeAdminRole(raw string) AdminRole {
+	role := AdminRole(strings.ToLower(strings.TrimSpace(raw)))
+	if _, ok := validAdminRoles[role]; !ok {
+		return ""
+	}
+
+	return role
+}
+
+func NormalizeAdminStatus(raw string) AdminStatus {
+	status := AdminStatus(strings.ToLower(strings.TrimSpace(raw)))
+	if _, ok := validAdminStatuses[status]; !ok {
+		return ""
+	}
+
+	return status
+}
+
+func ValidateAdminRole(raw string) error {
+	if NormalizeAdminRole(raw) == "" {
+		return errors.New("invalid admin role")
+	}
+
+	return nil
+}
+
+func ValidateAdminStatus(status AdminStatus) error {
+	if _, ok := validAdminStatuses[status]; !ok {
+		return errors.New("invalid admin status")
+	}
+
+	return nil
 }
 
 func NormalizeAdminPermissions(permissions []AdminPermission) string {

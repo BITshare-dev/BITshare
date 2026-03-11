@@ -3,7 +3,7 @@ package session
 import "openshare/backend/internal/model"
 
 func (i AdminIdentity) IsSuperAdmin() bool {
-	return i.Role == model.AdminRoleSuperAdmin
+	return i.Role == string(model.AdminRoleSuperAdmin)
 }
 
 func (i AdminIdentity) HasPermission(permission model.AdminPermission) bool {

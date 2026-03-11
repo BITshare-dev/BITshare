@@ -92,7 +92,7 @@ func (s *AdminBootstrapService) ensureDefaultSuperAdmin() (*bootstrapResult, err
 			ID:           adminID,
 			Username:     defaultSuperAdminUsername,
 			PasswordHash: string(passwordHash),
-			Role:         model.AdminRoleSuperAdmin,
+			Role:         string(model.AdminRoleSuperAdmin),
 			Status:       model.AdminStatusActive,
 		}
 		if err := s.adminRepo.Create(tx, admin); err != nil {

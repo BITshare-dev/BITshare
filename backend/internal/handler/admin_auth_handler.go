@@ -100,7 +100,7 @@ func (h *AdminAuthHandler) Me(ctx *gin.Context) {
 			ID:          identity.AdminID,
 			Username:    identity.Username,
 			Role:        identity.Role,
-			Status:      model.AdminStatusActive,
+			Status:      identity.Status,
 			Permissions: identity.Permissions,
 		},
 	})

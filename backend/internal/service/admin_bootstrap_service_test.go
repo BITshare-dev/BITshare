@@ -37,7 +37,7 @@ func TestEnsureDefaultSuperAdminIsIdempotent(t *testing.T) {
 	if admin.Username != defaultSuperAdminUsername {
 		t.Fatalf("expected username %q, got %q", defaultSuperAdminUsername, admin.Username)
 	}
-	if admin.Role != model.AdminRoleSuperAdmin {
+	if admin.Role != string(model.AdminRoleSuperAdmin) {
 		t.Fatalf("expected role %q, got %q", model.AdminRoleSuperAdmin, admin.Role)
 	}
 	if admin.Status != model.AdminStatusActive {

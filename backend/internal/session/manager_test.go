@@ -184,7 +184,7 @@ func createActiveAdmin(t *testing.T, db *gorm.DB, username string) *model.Admin 
 		ID:           id,
 		Username:     username,
 		PasswordHash: "hash",
-		Role:         model.AdminRoleAdmin,
+		Role:         string(model.AdminRoleAdmin),
 		Status:       model.AdminStatusActive,
 	}
 	if err := db.Create(admin).Error; err != nil {

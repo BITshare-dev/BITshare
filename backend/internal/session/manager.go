@@ -51,6 +51,7 @@ type AdminIdentity struct {
 	AdminID     string
 	Username    string
 	Role        string
+	Status      model.AdminStatus
 	Permissions []model.AdminPermission
 	ExpiresAt   time.Time
 }
@@ -110,6 +111,7 @@ func (m *Manager) Create(ctx context.Context, admin *model.Admin) (string, Admin
 		AdminID:     admin.ID,
 		Username:    admin.Username,
 		Role:        admin.Role,
+		Status:      admin.Status,
 		Permissions: admin.PermissionList(),
 		ExpiresAt:   sessionModel.ExpiresAt,
 	}
@@ -147,6 +149,7 @@ func (m *Manager) Resolve(ctx context.Context, cookieValue string) (*ResolveResu
 			AdminID:     sessionModel.Admin.ID,
 			Username:    sessionModel.Admin.Username,
 			Role:        sessionModel.Admin.Role,
+			Status:      sessionModel.Admin.Status,
 			Permissions: sessionModel.Admin.PermissionList(),
 			ExpiresAt:   sessionModel.ExpiresAt,
 		},
