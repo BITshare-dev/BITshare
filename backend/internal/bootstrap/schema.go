@@ -19,6 +19,7 @@ var managedModels = []any{
 	&model.Report{},
 	&model.Announcement{},
 	&model.OperationLog{},
+	&model.AdminSession{},
 	&model.TagSubmission{},
 }
 

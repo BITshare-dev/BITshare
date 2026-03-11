@@ -1,4 +1,4 @@
-package service
+package identity
 
 import (
 	"crypto/rand"
@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-func newUUID() (string, error) {
+func NewID() (string, error) {
 	var raw [16]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return "", fmt.Errorf("read random bytes for uuid: %w", err)

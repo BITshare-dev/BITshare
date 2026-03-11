@@ -27,6 +27,7 @@
   "session": {
     "name": "openshare_session",
     "secret": "replace-this-in-local-config",
+    "path": "/",
     "max_age_seconds": 86400,
     "secure": false,
     "http_only": true,

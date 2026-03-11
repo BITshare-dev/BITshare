@@ -79,6 +79,8 @@ type Admin struct {
 	Status       AdminStatus `gorm:"column:status;type:text;not null;default:'active'"`
 	CreatedAt    time.Time   `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt    time.Time   `gorm:"column:updated_at;autoUpdateTime"`
+
+	Sessions []AdminSession `gorm:"foreignKey:AdminID"`
 }
 
 // Folder is the hierarchical container for files and subfolders.
@@ -118,9 +120,9 @@ type File struct {
 	DeletedAt     *time.Time     `gorm:"column:deleted_at;type:datetime"`
 
 	// Relations
-	Folder     *Folder    `gorm:"foreignKey:FolderID"`
+	Folder     *Folder     `gorm:"foreignKey:FolderID"`
 	Submission *Submission `gorm:"foreignKey:SubmissionID"`
-	FileTags   []FileTag  `gorm:"foreignKey:FileID"`
+	FileTags   []FileTag   `gorm:"foreignKey:FileID"`
 }
 
 // Submission tracks an upload request from staging through moderation.
@@ -201,9 +203,9 @@ type Report struct {
 	CreatedAt    time.Time    `gorm:"column:created_at;autoCreateTime;index:idx_reports_status_created_at,sort:desc"`
 	UpdatedAt    time.Time    `gorm:"column:updated_at;autoUpdateTime"`
 
-	File     *File  `gorm:"foreignKey:FileID"`
+	File     *File   `gorm:"foreignKey:FileID"`
 	Folder   *Folder `gorm:"foreignKey:FolderID"`
-	Reviewer *Admin `gorm:"foreignKey:ReviewerID"`
+	Reviewer *Admin  `gorm:"foreignKey:ReviewerID"`
 }
 
 // Announcement is a publishable notice shown on the homepage.
@@ -236,18 +238,31 @@ type OperationLog struct {
 	Admin *Admin `gorm:"foreignKey:AdminID"`
 }
 
+// AdminSession is the persisted management session stored in SQLite.
+type AdminSession struct {
+	ID             EntityID  `gorm:"column:id;type:text;primaryKey"`
+	AdminID        EntityID  `gorm:"column:admin_id;type:text;not null;index:idx_admin_sessions_admin_id_expires_at"`
+	TokenHash      string    `gorm:"column:token_hash;type:text;not null;uniqueIndex:ux_admin_sessions_token_hash"`
+	ExpiresAt      time.Time `gorm:"column:expires_at;type:datetime;not null;index:idx_admin_sessions_admin_id_expires_at,sort:desc;index:idx_admin_sessions_expires_at"`
+	LastActivityAt time.Time `gorm:"column:last_activity_at;type:datetime;not null"`
+	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt      time.Time `gorm:"column:updated_at;autoUpdateTime"`
+
+	Admin Admin `gorm:"foreignKey:AdminID"`
+}
+
 // TagSubmission keeps the optional workflow where users propose new tags for review.
 type TagSubmission struct {
-	ID            EntityID            `gorm:"column:id;type:text;primaryKey"`
-	ProposedName  string              `gorm:"column:proposed_name;type:text;not null"`
-	Status        TagSubmissionStatus `gorm:"column:status;type:text;not null;default:'pending'"`
-	TagID         *EntityID           `gorm:"column:tag_id;type:text"`
-	ReviewerID    *EntityID           `gorm:"column:reviewer_id;type:text"`
-	ReviewedAt    *time.Time          `gorm:"column:reviewed_at;type:datetime"`
-	RejectReason  string              `gorm:"column:reject_reason;type:text;not null;default:''"`
-	SubmitterIP   string              `gorm:"column:submitter_ip;type:text;not null;default:''"`
-	CreatedAt     time.Time           `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt     time.Time           `gorm:"column:updated_at;autoUpdateTime"`
+	ID           EntityID            `gorm:"column:id;type:text;primaryKey"`
+	ProposedName string              `gorm:"column:proposed_name;type:text;not null"`
+	Status       TagSubmissionStatus `gorm:"column:status;type:text;not null;default:'pending'"`
+	TagID        *EntityID           `gorm:"column:tag_id;type:text"`
+	ReviewerID   *EntityID           `gorm:"column:reviewer_id;type:text"`
+	ReviewedAt   *time.Time          `gorm:"column:reviewed_at;type:datetime"`
+	RejectReason string              `gorm:"column:reject_reason;type:text;not null;default:''"`
+	SubmitterIP  string              `gorm:"column:submitter_ip;type:text;not null;default:''"`
+	CreatedAt    time.Time           `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt    time.Time           `gorm:"column:updated_at;autoUpdateTime"`
 
 	Tag      *Tag   `gorm:"foreignKey:TagID"`
 	Reviewer *Admin `gorm:"foreignKey:ReviewerID"`
@@ -257,14 +272,15 @@ type TagSubmission struct {
 // Table name overrides
 // ---------------------------------------------------------------------------
 
-func (Admin) TableName() string          { return "admins" }
-func (Folder) TableName() string         { return "folders" }
-func (File) TableName() string           { return "files" }
-func (Submission) TableName() string     { return "submissions" }
-func (Tag) TableName() string            { return "tags" }
-func (FileTag) TableName() string        { return "file_tags" }
-func (FolderTag) TableName() string      { return "folder_tags" }
-func (Report) TableName() string         { return "reports" }
-func (Announcement) TableName() string   { return "announcements" }
-func (OperationLog) TableName() string   { return "operation_logs" }
-func (TagSubmission) TableName() string  { return "tag_submissions" }
+func (Admin) TableName() string         { return "admins" }
+func (Folder) TableName() string        { return "folders" }
+func (File) TableName() string          { return "files" }
+func (Submission) TableName() string    { return "submissions" }
+func (Tag) TableName() string           { return "tags" }
+func (FileTag) TableName() string       { return "file_tags" }
+func (FolderTag) TableName() string     { return "folder_tags" }
+func (Report) TableName() string        { return "reports" }
+func (Announcement) TableName() string  { return "announcements" }
+func (OperationLog) TableName() string  { return "operation_logs" }
+func (AdminSession) TableName() string  { return "admin_sessions" }
+func (TagSubmission) TableName() string { return "tag_submissions" }

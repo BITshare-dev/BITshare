@@ -9,6 +9,7 @@
     "root": "/data/openshare"
   },
   "session": {
-    "secret": "change-me-before-production"
+    "secret": "change-me-before-production",
+    "path": "/"
   }
 }

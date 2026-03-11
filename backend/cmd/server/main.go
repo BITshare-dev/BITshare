@@ -8,6 +8,7 @@ import (
 	"openshare/backend/internal/repository"
 	"openshare/backend/internal/router"
 	"openshare/backend/internal/service"
+	"openshare/backend/internal/session"
 	"openshare/backend/internal/storage"
 	"openshare/backend/pkg/database"
 )
@@ -41,7 +42,8 @@ func main() {
 		log.Fatalf("init default super admin: %v", err)
 	}
 
-	engine := router.New(db)
+	sessionManager := session.NewManager(db, cfg.Session, repository.NewAdminSessionRepository())
+	engine := router.New(db, sessionManager)
 
 	log.Printf("OpenShare server listening on :%d", cfg.Server.Port)
 	if err := engine.Run(cfg.Server.Address()); err != nil {

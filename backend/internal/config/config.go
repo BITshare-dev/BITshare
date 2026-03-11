@@ -47,6 +47,7 @@ type StorageConfig struct {
 type SessionConfig struct {
 	Name            string `json:"name"`
 	Secret          string `json:"secret"`
+	Path            string `json:"path"`
 	MaxAgeSeconds   int    `json:"max_age_seconds"`
 	Secure          bool   `json:"secure"`
 	HTTPOnly        bool   `json:"http_only"`
@@ -89,6 +90,7 @@ func Default() Config {
 		Session: SessionConfig{
 			Name:            "openshare_session",
 			Secret:          "replace-this-in-local-config",
+			Path:            "/",
 			MaxAgeSeconds:   86400, // 24h
 			Secure:          false,
 			HTTPOnly:        true,
@@ -163,6 +165,7 @@ func applyEnv(cfg *Config) error {
 	overrideString("OPENSHARE_STORAGE_TRASH", &cfg.Storage.Trash)
 	overrideString("OPENSHARE_SESSION_NAME", &cfg.Session.Name)
 	overrideString("OPENSHARE_SESSION_SECRET", &cfg.Session.Secret)
+	overrideString("OPENSHARE_SESSION_PATH", &cfg.Session.Path)
 	overrideInt("OPENSHARE_SESSION_MAX_AGE_SECONDS", &cfg.Session.MaxAgeSeconds, &errs)
 	overrideBool("OPENSHARE_SESSION_SECURE", &cfg.Session.Secure, &errs)
 	overrideBool("OPENSHARE_SESSION_HTTP_ONLY", &cfg.Session.HTTPOnly, &errs)
@@ -220,8 +223,14 @@ func (c Config) Validate() error {
 	if c.Session.MaxAgeSeconds <= 0 {
 		return errors.New("session.max_age_seconds must be greater than 0")
 	}
+	if c.Session.Path == "" || !strings.HasPrefix(c.Session.Path, "/") {
+		return errors.New("session.path must start with '/'")
+	}
 	if c.Session.RenewWindowSecs < 0 || c.Session.RenewWindowSecs > c.Session.MaxAgeSeconds {
 		return errors.New("session.renew_window_seconds must be between 0 and session.max_age_seconds")
+	}
+	if c.Session.SameSite == "none" && !c.Session.Secure {
+		return errors.New("session.same_site 'none' requires session.secure=true")
 	}
 
 	switch c.Session.SameSite {
@@ -247,6 +256,7 @@ func (c ServerConfig) Address() string {
 func (c *Config) normalize() {
 	c.Database.LogLevel = strings.ToLower(strings.TrimSpace(c.Database.LogLevel))
 	c.Session.SameSite = strings.ToLower(strings.TrimSpace(c.Session.SameSite))
+	c.Session.Path = strings.TrimSpace(c.Session.Path)
 
 	c.Storage.Root = strings.TrimSpace(c.Storage.Root)
 	c.Storage.Repository = strings.TrimSpace(c.Storage.Repository)

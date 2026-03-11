@@ -13,6 +13,7 @@ import (
 
 	"openshare/backend/internal/model"
 	"openshare/backend/internal/repository"
+	"openshare/backend/pkg/identity"
 )
 
 const defaultSuperAdminUsername = "superadmin"
@@ -82,7 +83,7 @@ func (s *AdminBootstrapService) ensureDefaultSuperAdmin() (*bootstrapResult, err
 			return fmt.Errorf("hash initial password: %w", err)
 		}
 
-		adminID, err := newUUID()
+		adminID, err := identity.NewID()
 		if err != nil {
 			return fmt.Errorf("generate super admin id: %w", err)
 		}
