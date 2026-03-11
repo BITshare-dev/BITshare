@@ -22,6 +22,9 @@ func New(db *gorm.DB, sessionManager *session.Manager) *gin.Engine {
 	adminRepo := repository.NewAdminRepository(db)
 	adminAuthService := service.NewAdminAuthService(db, adminRepo, sessionManager)
 	adminAuthHandler := handler.NewAdminAuthHandler(adminAuthService, sessionManager)
+	publicCatalogHandler := handler.NewPublicCatalogHandler(
+		service.NewPublicCatalogService(repository.NewPublicCatalogRepository(db)),
+	)
 
 	engine.GET("/healthz", func(ctx *gin.Context) {
 		sqlDB, err := db.DB()
@@ -45,6 +48,9 @@ func New(db *gorm.DB, sessionManager *session.Manager) *gin.Engine {
 	})
 
 	api := engine.Group("/api")
+	public := api.Group("/public")
+	public.GET("/files", publicCatalogHandler.ListPublicFiles)
+
 	admin := api.Group("/admin")
 	admin.POST("/session/login", adminAuthHandler.Login)
 	admin.POST("/session/logout", adminAuthHandler.Logout)
