@@ -1,0 +1,48 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+  "database": {
+    "path": "/data/openshare/openshare.db",
+    "log_level": "warn",
+    "enable_wal": true,
+    "pragmas": [
+      {
+        "name": "foreign_keys",
+        "value": "ON"
+      },
+      {
+        "name": "busy_timeout",
+        "value": "5000"
+      }
+    ]
+  },
+  "storage": {
+    "root": "/data/openshare",
+    "repository": "repository",
+    "staging": "staging",
+    "trash": "trash"
+  },
+  "session": {
+    "name": "openshare_session",
+    "secret": "replace-this-in-local-config",
+    "max_age_seconds": 86400,
+    "secure": false,
+    "http_only": true,
+    "same_site": "lax",
+    "renew_window_seconds": 21600
+  },
+  "rate_limit": {
+    "upload": {
+      "enabled": true,
+      "limit": 10,
+      "window_seconds": 60
+    },
+    "search": {
+      "enabled": true,
+      "limit": 60,
+      "window_seconds": 60
+    }
+  }
+}

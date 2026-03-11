@@ -1,0 +1,14 @@
+{
+  "server": {
+    "port": 8080
+  },
+  "database": {
+    "path": "/data/openshare/openshare.local.db"
+  },
+  "storage": {
+    "root": "/data/openshare"
+  },
+  "session": {
+    "secret": "change-me-before-production"
+  }
+}
