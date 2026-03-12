@@ -21,14 +21,14 @@ import (
 )
 
 var (
-	ErrInvalidUploadInput    = errors.New("invalid upload input")
-	ErrUploadReceiptExists   = errors.New("receipt code already exists")
-	ErrUploadFileTooLarge    = errors.New("upload file too large")
-	ErrUploadEmptyFile       = errors.New("upload file is empty")
-	ErrInvalidFileExtension  = errors.New("invalid file extension")
-	ErrInvalidFileMIMEType   = errors.New("invalid file mime type")
-	ErrReceiptCodeGenerate   = errors.New("failed to generate receipt code")
-	ErrUploadFolderNotFound  = errors.New("upload target folder not found")
+	ErrInvalidUploadInput   = errors.New("invalid upload input")
+	ErrUploadReceiptExists  = errors.New("receipt code already exists")
+	ErrUploadFileTooLarge   = errors.New("upload file too large")
+	ErrUploadEmptyFile      = errors.New("upload file is empty")
+	ErrInvalidFileExtension = errors.New("invalid file extension")
+	ErrInvalidFileMIMEType  = errors.New("invalid file mime type")
+	ErrReceiptCodeGenerate  = errors.New("failed to generate receipt code")
+	ErrUploadFolderNotFound = errors.New("upload target folder not found")
 )
 
 const maxGeneratedReceiptAttempts = 5
@@ -42,7 +42,6 @@ type PublicUploadService struct {
 }
 
 type PublicUploadInput struct {
-	Title        string
 	Description  string
 	Tags         []string
 	ReceiptCode  string
@@ -200,11 +199,6 @@ type normalizedUploadInput struct {
 }
 
 func (s *PublicUploadService) normalizeInput(input PublicUploadInput) (*normalizedUploadInput, error) {
-	title := strings.TrimSpace(input.Title)
-	if title == "" || len([]rune(title)) > s.config.MaxTitleLength {
-		return nil, ErrInvalidUploadInput
-	}
-
 	description := strings.TrimSpace(input.Description)
 	if len([]rune(description)) > s.config.MaxDescriptionLength {
 		return nil, ErrInvalidUploadInput
@@ -228,6 +222,12 @@ func (s *PublicUploadService) normalizeInput(input PublicUploadInput) (*normaliz
 	extension := strings.ToLower(strings.TrimSpace(filepath.Ext(originalName)))
 	if !s.isAllowedExtension(extension) {
 		return nil, ErrInvalidFileExtension
+	}
+
+	// Title is always derived from the original filename (immutable).
+	title := strings.TrimSuffix(originalName, filepath.Ext(originalName))
+	if title == "" {
+		title = originalName
 	}
 
 	return &normalizedUploadInput{

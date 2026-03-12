@@ -4,6 +4,7 @@ import AdminLayout from "@/layouts/AdminLayout.vue";
 import PublicLayout from "@/layouts/PublicLayout.vue";
 import AdminDashboardView from "@/views/admin/AdminDashboardView.vue";
 import HomeView from "@/views/public/HomeView.vue";
+import SearchView from "@/views/public/SearchView.vue";
 
 const routes: RouteRecordRaw[] = [
   {
@@ -14,6 +15,11 @@ const routes: RouteRecordRaw[] = [
         path: "",
         name: "public-home",
         component: HomeView,
+      },
+      {
+        path: "search",
+        name: "public-search",
+        component: SearchView,
       },
     ],
   },

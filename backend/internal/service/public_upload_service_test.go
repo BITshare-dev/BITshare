@@ -26,7 +26,6 @@ func TestCreateSubmissionReusesExistingReceiptCode(t *testing.T) {
 	createExistingSubmission(t, db, "CUSTOM123")
 
 	result, err := service.CreateSubmission(context.Background(), PublicUploadInput{
-		Title:        "高等数学",
 		ReceiptCode:  "CUSTOM123",
 		OriginalName: "notes.pdf",
 		DeclaredMIME: "application/pdf",
@@ -49,7 +48,6 @@ func TestCreateSubmissionReturnsReceiptGenerationError(t *testing.T) {
 	}
 
 	_, err := service.CreateSubmission(context.Background(), PublicUploadInput{
-		Title:        "离散数学",
 		OriginalName: "notes.pdf",
 		DeclaredMIME: "application/pdf",
 		File:         strings.NewReader("%PDF-1.4 test document"),

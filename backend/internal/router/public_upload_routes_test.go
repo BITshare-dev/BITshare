@@ -20,7 +20,6 @@ func TestPublicUploadCreatesPendingSubmission(t *testing.T) {
 	engine := New(db, cfg, newRouterSessionManager(db))
 
 	body, contentType := buildUploadRequestBody(t, uploadRequestBody{
-		title:       "线性代数讲义",
 		description: "第一章到第四章",
 		tags:        []string{"数学", "考试"},
 		fileName:    "notes.pdf",
@@ -56,8 +55,8 @@ func TestPublicUploadCreatesPendingSubmission(t *testing.T) {
 	if err := db.Where("receipt_code = ?", response.ReceiptCode).Take(&submission).Error; err != nil {
 		t.Fatalf("query submission failed: %v", err)
 	}
-	if submission.TitleSnapshot != "线性代数讲义" {
-		t.Fatalf("unexpected title snapshot %q", submission.TitleSnapshot)
+	if submission.TitleSnapshot != "notes" {
+		t.Fatalf("expected title snapshot 'notes' (from filename), got %q", submission.TitleSnapshot)
 	}
 
 	var file model.File
@@ -80,7 +79,6 @@ func TestPublicUploadReusesExistingReceiptCode(t *testing.T) {
 	createPendingSubmissionForTest(t, db, "CUSTOM123")
 
 	body, contentType := buildUploadRequestBody(t, uploadRequestBody{
-		title:       "操作系统实验",
 		receiptCode: "CUSTOM123",
 		fileName:    "os.pdf",
 		fileContent: []byte("%PDF-1.4 test document"),
@@ -119,7 +117,6 @@ func TestPublicUploadRejectsInvalidExtension(t *testing.T) {
 	engine := New(db, cfg, newRouterSessionManager(db))
 
 	body, contentType := buildUploadRequestBody(t, uploadRequestBody{
-		title:       "危险脚本",
 		fileName:    "script.sh",
 		fileContent: []byte("#!/bin/sh\necho test"),
 	})
@@ -135,13 +132,13 @@ func TestPublicUploadRejectsInvalidExtension(t *testing.T) {
 	}
 }
 
-func TestPublicUploadRejectsMissingTitle(t *testing.T) {
+func TestPublicUploadDerivesGitleFromFilename(t *testing.T) {
 	cfg := newRouterTestConfig(t)
 	db := newRouterTestDB(t)
 	engine := New(db, cfg, newRouterSessionManager(db))
 
 	body, contentType := buildUploadRequestBody(t, uploadRequestBody{
-		fileName:    "notes.pdf",
+		fileName:    "线性代数讲义.pdf",
 		fileContent: []byte("%PDF-1.4 test document"),
 	})
 
@@ -151,8 +148,16 @@ func TestPublicUploadRejectsMissingTitle(t *testing.T) {
 
 	engine.ServeHTTP(recorder, request)
 
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("expected status 400, got %d, body=%s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d, body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var submission model.Submission
+	if err := db.First(&submission).Error; err != nil {
+		t.Fatalf("query submission failed: %v", err)
+	}
+	if submission.TitleSnapshot != "线性代数讲义" {
+		t.Fatalf("expected title derived from filename, got %q", submission.TitleSnapshot)
 	}
 }
 
@@ -164,7 +169,6 @@ func TestPublicUploadAssignsFileToFolder(t *testing.T) {
 	folderID := createPublicTestFolder(t, db, "课程资料")
 
 	body, contentType := buildUploadRequestBody(t, uploadRequestBody{
-		title:       "概率论笔记",
 		folderID:    folderID,
 		fileName:    "probability.pdf",
 		fileContent: []byte("%PDF-1.4 test document"),
@@ -181,7 +185,7 @@ func TestPublicUploadAssignsFileToFolder(t *testing.T) {
 	}
 
 	var file model.File
-	if err := db.Where("title = ?", "概率论笔记").Take(&file).Error; err != nil {
+	if err := db.Where("title = ?", "probability").Take(&file).Error; err != nil {
 		t.Fatalf("query file failed: %v", err)
 	}
 	if file.FolderID == nil || *file.FolderID != folderID {
@@ -190,7 +194,6 @@ func TestPublicUploadAssignsFileToFolder(t *testing.T) {
 }
 
 type uploadRequestBody struct {
-	title       string
 	description string
 	tags        []string
 	receiptCode string
@@ -205,11 +208,6 @@ func buildUploadRequestBody(t *testing.T, input uploadRequestBody) (*bytes.Buffe
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	if input.title != "" {
-		if err := writer.WriteField("title", input.title); err != nil {
-			t.Fatalf("write title failed: %v", err)
-		}
-	}
 	if input.description != "" {
 		if err := writer.WriteField("description", input.description); err != nil {
 			t.Fatalf("write description failed: %v", err)

@@ -50,7 +50,6 @@ interface UploadResponse {
 
 const cachedReceiptCodeKey = "openshare:last_receipt_code";
 
-const uploadTitle = ref("");
 const uploadDescription = ref("");
 const uploadTags = ref("");
 const uploadReceiptCode = ref("");
@@ -174,7 +173,6 @@ async function submitUpload() {
   }
 
   const formData = new FormData();
-  formData.set("title", uploadTitle.value);
   formData.set("description", uploadDescription.value);
   formData.set("file", uploadFile.value);
 
@@ -213,7 +211,6 @@ async function submitUpload() {
     receiptCode.value = response.receipt_code;
     uploadReceiptCode.value = response.receipt_code;
     window.localStorage.setItem(cachedReceiptCodeKey, response.receipt_code);
-    uploadTitle.value = "";
     uploadDescription.value = "";
     uploadTags.value = "";
     uploadFile.value = null;
@@ -329,11 +326,6 @@ function formatSize(size: number) {
         </div>
 
         <form class="mt-6 space-y-4" @submit.prevent="submitUpload">
-          <label class="block">
-            <span class="mb-2 block text-sm font-medium text-slate-700">标题</span>
-            <input v-model="uploadTitle" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:bg-white" />
-          </label>
-
           <label class="block">
             <span class="mb-2 block text-sm font-medium text-slate-700">描述</span>
             <textarea v-model="uploadDescription" rows="3" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:bg-white" />

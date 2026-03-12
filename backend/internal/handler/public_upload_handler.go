@@ -38,7 +38,6 @@ func (h *PublicUploadHandler) CreateSubmission(ctx *gin.Context) {
 	defer file.Close()
 
 	result, err := h.service.CreateSubmission(ctx.Request.Context(), service.PublicUploadInput{
-		Title:        ctx.PostForm("title"),
 		Description:  ctx.PostForm("description"),
 		Tags:         append(ctx.PostFormArray("tag"), ctx.PostFormArray("tags")...),
 		ReceiptCode:  ctx.PostForm("receipt_code"),

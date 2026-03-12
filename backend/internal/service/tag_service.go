@@ -40,12 +40,14 @@ const maxTagNameLength = 32
 
 type TagService struct {
 	repo    *repository.TagRepository
+	search  *SearchService
 	nowFunc func() time.Time
 }
 
-func NewTagService(repo *repository.TagRepository) *TagService {
+func NewTagService(repo *repository.TagRepository, searchService *SearchService) *TagService {
 	return &TagService{
 		repo:    repo,
+		search:  searchService,
 		nowFunc: func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -245,6 +247,11 @@ func (s *TagService) BindFileTags(ctx context.Context, input BindFileTagsInput) 
 		return fmt.Errorf("replace file tags: %w", err)
 	}
 
+	// Re-index file after tag change.
+	if s.search != nil {
+		_ = s.search.IndexFile(ctx, file.ID, file.Title)
+	}
+
 	_ = s.repo.LogOperation(ctx, input.AdminID, "file_tags_updated", "file", file.ID,
 		strings.Join(input.TagNames, ","), input.OperatorIP, s.nowFunc())
 	return nil
@@ -266,6 +273,11 @@ func (s *TagService) BindFolderTags(ctx context.Context, input BindFolderTagsInp
 
 	if err := s.repo.ReplaceFolderTags(ctx, folder.ID, tagIDs); err != nil {
 		return fmt.Errorf("replace folder tags: %w", err)
+	}
+
+	// Re-index folder after tag change.
+	if s.search != nil {
+		_ = s.search.IndexFolder(ctx, folder.ID, folder.Name)
 	}
 
 	_ = s.repo.LogOperation(ctx, input.AdminID, "folder_tags_updated", "folder", folder.ID,

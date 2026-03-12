@@ -78,9 +78,9 @@ func createRepositoryFileForDownload(t *testing.T, cfg config.Config, db *gorm.D
 
 	now := time.Date(2026, 3, 12, 15, 0, 0, 0, time.UTC)
 	storedName := mustNewID(t) + filepath.Ext(originalName)
-	diskPath := filepath.Join(cfg.Storage.Root, cfg.Storage.Repository, storedName)
+	diskPath := filepath.Join(cfg.Storage.Root, storedName)
 	if err := os.WriteFile(diskPath, content, 0o644); err != nil {
-		t.Fatalf("write repository file failed: %v", err)
+		t.Fatalf("write file for download failed: %v", err)
 	}
 
 	file := &model.File{

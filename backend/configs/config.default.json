@@ -20,7 +20,6 @@
   },
   "storage": {
     "root": "/data/openshare",
-    "repository": "repository",
     "staging": "staging",
     "trash": "trash"
   },

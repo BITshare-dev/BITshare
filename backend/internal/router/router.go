@@ -25,13 +25,19 @@ func New(db *gorm.DB, cfg config.Config, sessionManager *session.Manager) *gin.E
 	adminRepo := repository.NewAdminRepository(db)
 	adminAuthService := service.NewAdminAuthService(db, adminRepo, sessionManager)
 	adminAuthHandler := handler.NewAdminAuthHandler(adminAuthService, sessionManager)
+
+	searchRepo := repository.NewSearchRepository(db)
+	tagRepo := repository.NewTagRepository(db)
+	searchService := service.NewSearchService(searchRepo, tagRepo)
+	searchHandler := handler.NewSearchHandler(searchService)
+
 	importHandler := handler.NewImportHandler(
-		service.NewImportService(repository.NewImportRepository(db), storageService),
+		service.NewImportService(repository.NewImportRepository(db), storageService, searchService),
 	)
 	moderationHandler := handler.NewModerationHandler(
-		service.NewModerationService(repository.NewModerationRepository(db), storageService),
+		service.NewModerationService(repository.NewModerationRepository(db), storageService, searchService),
 	)
-	tagService := service.NewTagService(repository.NewTagRepository(db))
+	tagService := service.NewTagService(tagRepo, searchService)
 	tagHandler := handler.NewTagHandler(tagService)
 	publicCatalogHandler := handler.NewPublicCatalogHandler(
 		service.NewPublicCatalogService(repository.NewPublicCatalogRepository(db)),
@@ -77,6 +83,7 @@ func New(db *gorm.DB, cfg config.Config, sessionManager *session.Manager) *gin.E
 	public.GET("/files", publicCatalogHandler.ListPublicFiles)
 	public.GET("/files/:fileID/download", publicDownloadHandler.DownloadFile)
 	public.GET("/folders", publicCatalogHandler.ListPublicFolders)
+	public.GET("/search", searchHandler.Search)
 	public.POST("/submissions", publicUploadHandler.CreateSubmission)
 	public.GET("/submissions/:receiptCode", publicSubmissionHandler.LookupByReceiptCode)
 	public.POST("/tag-submissions", tagHandler.SubmitCandidateTag)
@@ -107,6 +114,11 @@ func New(db *gorm.DB, cfg config.Config, sessionManager *session.Manager) *gin.E
 		"/imports/local",
 		middleware.RequireAdminPermission(model.AdminPermissionManageSystem),
 		importHandler.ImportLocalDirectory,
+	)
+	adminProtected.POST(
+		"/search/rebuild-index",
+		middleware.RequireAdminPermission(model.AdminPermissionManageSystem),
+		searchHandler.RebuildIndex,
 	)
 	adminProtected.GET(
 		"/folders/tree",

@@ -39,10 +39,9 @@ type SQLPragma struct {
 }
 
 type StorageConfig struct {
-	Root       string `json:"root"`
-	Repository string `json:"repository"`
-	Staging    string `json:"staging"`
-	Trash      string `json:"trash"`
+	Root    string `json:"root"`
+	Staging string `json:"staging"`
+	Trash   string `json:"trash"`
 }
 
 type UploadConfig struct {
@@ -94,10 +93,9 @@ func Default() Config {
 			},
 		},
 		Storage: StorageConfig{
-			Root:       defaultStorageRoot,
-			Repository: "repository",
-			Staging:    "staging",
-			Trash:      "trash",
+			Root:    defaultStorageRoot,
+			Staging: "staging",
+			Trash:   "trash",
 		},
 		Upload: UploadConfig{
 			MaxFileSizeBytes: 64 << 20,
@@ -200,7 +198,6 @@ func applyEnv(cfg *Config) error {
 	overrideString("OPENSHARE_DATABASE_LOG_LEVEL", &cfg.Database.LogLevel)
 	overrideBool("OPENSHARE_DATABASE_ENABLE_WAL", &cfg.Database.EnableWAL, &errs)
 	overrideString("OPENSHARE_STORAGE_ROOT", &cfg.Storage.Root)
-	overrideString("OPENSHARE_STORAGE_REPOSITORY", &cfg.Storage.Repository)
 	overrideString("OPENSHARE_STORAGE_STAGING", &cfg.Storage.Staging)
 	overrideString("OPENSHARE_STORAGE_TRASH", &cfg.Storage.Trash)
 	overrideInt64("OPENSHARE_UPLOAD_MAX_FILE_SIZE_BYTES", &cfg.Upload.MaxFileSizeBytes, &errs)
@@ -246,9 +243,6 @@ func (c Config) Validate() error {
 
 	if c.Storage.Root == "" {
 		return errors.New("storage.root must not be empty")
-	}
-	if c.Storage.Repository == "" {
-		return errors.New("storage.repository must not be empty")
 	}
 	if c.Storage.Staging == "" {
 		return errors.New("storage.staging must not be empty")
@@ -329,7 +323,6 @@ func (c *Config) normalize() {
 	c.Session.Path = strings.TrimSpace(c.Session.Path)
 
 	c.Storage.Root = strings.TrimSpace(c.Storage.Root)
-	c.Storage.Repository = strings.TrimSpace(c.Storage.Repository)
 	c.Storage.Staging = strings.TrimSpace(c.Storage.Staging)
 	c.Storage.Trash = strings.TrimSpace(c.Storage.Trash)
 	c.Upload.AllowedExtensions = normalizeStringSlice(c.Upload.AllowedExtensions, true)

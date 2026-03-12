@@ -107,7 +107,7 @@ Tag 限定搜索、支持 Tag 组合搜索、文件继承父文件夹 Tag 参与
 
 上传流程：
 
-上传 → staging → 创建 submission → 管理员审核 → rename 到 repository
+上传 → staging → 创建 submission → 管理员审核 → 直接移动到上传时的物理位置
 
 ### 查询上传记录
 
@@ -166,7 +166,6 @@ Tag 限定搜索、支持 Tag 组合搜索、文件继承父文件夹 Tag 参与
 ```
 /data/openshare
 
-repository   文件仓库
 staging      上传暂存
 trash        删除回收
 ```

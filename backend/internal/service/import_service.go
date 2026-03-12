@@ -23,6 +23,7 @@ var (
 type ImportService struct {
 	repository *repository.ImportRepository
 	storage    *storage.Service
+	search     *SearchService
 	nowFunc    func() time.Time
 }
 
@@ -59,10 +60,11 @@ type FolderTreeFile struct {
 	DownloadCount int64                `json:"download_count"`
 }
 
-func NewImportService(repository *repository.ImportRepository, storageService *storage.Service) *ImportService {
+func NewImportService(repository *repository.ImportRepository, storageService *storage.Service, searchService *SearchService) *ImportService {
 	return &ImportService{
 		repository: repository,
 		storage:    storageService,
+		search:     searchService,
 		nowFunc:    func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -168,6 +170,11 @@ func (s *ImportService) ImportLocalDirectory(ctx context.Context, input LocalImp
 
 	detail, _ := json.Marshal(result)
 	_ = s.repository.LogOperation(ctx, input.AdminID, "local_import", "folder", rootFolder.ID, string(detail), input.OperatorIP, now)
+
+	// Rebuild FTS5 search index to include newly imported files and folders.
+	if s.search != nil {
+		_ = s.search.RebuildAllIndexes(ctx)
+	}
 
 	return result, nil
 }
@@ -296,6 +303,11 @@ func (s *ImportService) BindFolderTags(ctx context.Context, folderID string, tag
 
 	if err := s.repository.ReplaceFolderTags(ctx, folder.ID, tagIDs); err != nil {
 		return fmt.Errorf("replace folder tags: %w", err)
+	}
+
+	// Re-index folder after tag change.
+	if s.search != nil {
+		_ = s.search.IndexFolder(ctx, folder.ID, folder.Name)
 	}
 
 	_ = s.repository.LogOperation(ctx, adminID, "folder_tags_updated", "folder", folder.ID, strings.Join(names, ","), operatorIP, s.nowFunc())
