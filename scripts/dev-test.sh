@@ -14,6 +14,14 @@ IMPORT_ROOT="${1:-}"
 
 BACKEND_PID=""
 FRONTEND_PID=""
+TOTAL_STEPS=6
+
+print_step() {
+  local step="$1"
+  local message="$2"
+  echo
+  echo "[$step/$TOTAL_STEPS] $message"
+}
 
 require_command() {
   local command_name="$1"
@@ -23,6 +31,19 @@ require_command() {
   fi
 }
 
+prepare_frontend_dependencies() {
+  if [[ -x "$FRONTEND_DIR/node_modules/.bin/vite" ]]; then
+    echo "前端依赖已存在，跳过安装。"
+    return
+  fi
+
+  echo "前端依赖缺失，正在执行 npm install ..."
+  (
+    cd "$FRONTEND_DIR"
+    npm install
+  )
+}
+
 wait_for_http() {
   local url="$1"
   local label="$2"
@@ -30,13 +51,13 @@ wait_for_http() {
 
   for ((i = 1; i <= attempts; i++)); do
     if curl --silent --fail "$url" >/dev/null 2>&1; then
-      echo "$label is ready: $url"
+      echo "$label 已就绪：$url"
       return 0
     fi
     sleep 1
   done
 
-  echo "$label failed to become ready: $url" >&2
+  echo "$label 启动失败：$url" >&2
   return 1
 }
 
@@ -56,14 +77,14 @@ cleanup() {
 
 reset_local_state() {
   rm -rf "$LOCAL_DATA_DIR"
-  echo "reset local test data: $LOCAL_DATA_DIR"
+  echo "已重置本地测试数据：$LOCAL_DATA_DIR"
 }
 
 prepare_config() {
   mkdir -p "$LOCAL_DATA_DIR" "$LOG_DIR"
 
   if [[ -f "$BACKEND_CONFIG_LOCAL" ]]; then
-    echo "using existing backend config: $BACKEND_CONFIG_LOCAL"
+    echo "检测到已有后端本地配置：$BACKEND_CONFIG_LOCAL"
     return
   fi
 
@@ -81,7 +102,7 @@ prepare_config() {
 }
 EOF
 
-  echo "created backend local config: $BACKEND_CONFIG_LOCAL"
+  echo "已创建后端本地配置：$BACKEND_CONFIG_LOCAL"
 }
 
 start_backend() {
@@ -109,7 +130,7 @@ print_initial_admin_credentials() {
       line="$(grep -E '\[bootstrap\] super admin initialized; username=.* password=.*' "$BACKEND_LOG" | tail -n 1 || true)"
       if [[ -n "$line" ]]; then
         echo
-        echo "initial superadmin credentials:"
+        echo "超级管理员初始凭据："
         echo "$line"
         return 0
       fi
@@ -118,46 +139,30 @@ print_initial_admin_credentials() {
   done
 
   echo
-  echo "initial superadmin password was not detected in time."
-  echo "check backend log manually: $BACKEND_LOG"
+  echo "暂未在限定时间内检测到超级管理员初始密码。"
+  echo "请手动查看后端日志：$BACKEND_LOG"
   return 1
 }
 
 print_summary() {
   echo
-  echo "========================================"
-  echo "OpenShare local test environment is ready"
-  echo "========================================"
+  echo "=================================="
+  echo "OpenShare 本地测试环境已就绪"
+  echo "=================================="
   echo
-  echo "browser entry:"
-  echo "  public page : http://localhost:5173/"
-  echo "  admin page  : http://localhost:5173/admin"
+  echo "浏览器入口："
+  echo "  公开页   : http://localhost:5173/"
+  echo "  管理页   : http://localhost:5173/admin"
   echo
-  echo "recommended test flow:"
-  echo "  1. open the public page and upload a file"
-  echo "  2. copy the returned receipt code and verify the submission record"
-  echo "  3. open the admin page and log in with superadmin"
-  echo "  4. review the pending submission and approve or reject it"
-  echo "  5. go back to the public page and verify public list / download behavior"
-  echo "  6. if needed, test local directory import on the admin page"
-  echo
-  echo "what to check:"
-  echo "  - upload success and receipt code generation"
-  echo "  - receipt lookup status / reject reason"
-  echo "  - moderation approve / reject flow"
-  echo "  - public file visibility after approval"
-  echo "  - file download availability and download count"
-  echo "  - local folder import and folder tag editing"
-  echo
-  echo "runtime files:"
-  echo "  backend log  : $BACKEND_LOG"
-  echo "  frontend log : $FRONTEND_LOG"
+  echo "运行日志："
+  echo "  后端日志 : $BACKEND_LOG"
+  echo "  前端日志 : $FRONTEND_LOG"
   if [[ -n "$IMPORT_ROOT" ]]; then
-    echo "  import root   : $IMPORT_ROOT"
+    echo "  导入目录 : $IMPORT_ROOT"
   fi
   echo
-  echo "this script resets the local database and storage on every startup for clean testing."
-  echo "press Ctrl+C to stop both services."
+  echo "当前脚本每次启动都会清空本地数据库和存储目录，适合删档测试。"
+  echo "按 Ctrl+C 可同时停止前后端服务。"
 }
 
 main() {
@@ -167,14 +172,25 @@ main() {
 
   trap cleanup EXIT INT TERM
 
+  print_step 1 "重置本地测试数据"
   reset_local_state
-  prepare_config
-  start_backend
-  start_frontend
 
-  wait_for_http "http://127.0.0.1:8080/api/public/files" "backend"
+  print_step 2 "准备后端本地配置"
+  prepare_config
+
+  print_step 3 "检查前端依赖"
+  prepare_frontend_dependencies
+
+  print_step 4 "启动后端服务"
+  start_backend
+  wait_for_http "http://127.0.0.1:8080/api/public/files" "后端"
   print_initial_admin_credentials
-  wait_for_http "http://127.0.0.1:5173/" "frontend"
+
+  print_step 5 "启动前端服务"
+  start_frontend
+  wait_for_http "http://127.0.0.1:5173/" "前端"
+
+  print_step 6 "输出测试入口与推荐流程"
   print_summary
 
   wait
