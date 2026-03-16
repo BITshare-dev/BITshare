@@ -82,6 +82,9 @@ func New(db *gorm.DB, cfg config.Config, sessionManager *session.Manager) *gin.E
 	reportRepo := repository.NewReportRepository(db)
 	reportService := service.NewReportService(reportRepo, searchService, storageService)
 	reportHandler := handler.NewReportHandler(reportService)
+	siteVisitHandler := handler.NewSiteVisitHandler(
+		service.NewSiteVisitService(repository.NewSiteVisitRepository(db)),
+	)
 
 	engine.GET("/healthz", func(ctx *gin.Context) {
 		sqlDB, err := db.DB()
@@ -105,6 +108,7 @@ func New(db *gorm.DB, cfg config.Config, sessionManager *session.Manager) *gin.E
 	})
 
 	api := engine.Group("/api")
+	api.POST("/visits", siteVisitHandler.Record)
 	public := api.Group("/public")
 	public.GET("/files", publicCatalogHandler.ListPublicFiles)
 	public.POST("/files/batch-download", publicDownloadHandler.DownloadBatch)
@@ -286,7 +290,6 @@ func New(db *gorm.DB, cfg config.Config, sessionManager *session.Manager) *gin.E
 
 	adminProtected.GET(
 		"/admins",
-		middleware.RequireAdminPermission(model.AdminPermissionManageAdmins),
 		adminManagementHandler.ListAdmins,
 	)
 	adminProtected.POST(

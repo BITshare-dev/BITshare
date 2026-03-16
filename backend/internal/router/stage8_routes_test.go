@@ -112,12 +112,25 @@ func TestSuperAdminCanManageAdminsAndNormalAdminCannot(t *testing.T) {
 		t.Fatalf("super admin create admin: expected 201, got %d, body=%s", createRec.Code, createRec.Body.String())
 	}
 
-	forbiddenReq := httptest.NewRequest(http.MethodGet, "/api/admin/admins", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/api/admin/admins", nil)
+	listReq.AddCookie(adminCookie)
+	listRec := httptest.NewRecorder()
+	engine.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("normal admin should be allowed to view admin list, got %d body=%s", listRec.Code, listRec.Body.String())
+	}
+
+	forbiddenReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/admin/admins",
+		bytes.NewBufferString(`{"permissions":["manage_tags"]}`),
+	)
+	forbiddenReq.Header.Set("Content-Type", "application/json")
 	forbiddenReq.AddCookie(adminCookie)
 	forbiddenRec := httptest.NewRecorder()
 	engine.ServeHTTP(forbiddenRec, forbiddenReq)
 	if forbiddenRec.Code != http.StatusForbidden {
-		t.Fatalf("normal admin should be forbidden from admin management, got %d", forbiddenRec.Code)
+		t.Fatalf("normal admin should still be forbidden from creating admins, got %d", forbiddenRec.Code)
 	}
 }
 
@@ -130,7 +143,7 @@ func TestSuperAdminCanPersistSystemSettings(t *testing.T) {
 	cookie := mustCreateSession(t, manager, superAdmin)
 
 	body := bytes.NewBufferString(`{
-		"guest":{"allow_direct_publish":true,"extra_permissions_enabled":true,"allow_guest_resource_edit":false,"allow_guest_resource_delete":false},
+		"guest":{"allow_direct_publish":true,"extra_permissions_enabled":true,"allow_guest_edit_title":false,"allow_guest_edit_tags":false,"allow_guest_edit_description":false,"allow_guest_resource_delete":false},
 		"upload":{"max_file_size_bytes":1048576,"max_tag_count":8,"allowed_extensions":[".pdf",".md"]},
 		"search":{"enable_fuzzy_match":true,"enable_tag_filter":true,"enable_folder_scope":true,"result_window":25}
 	}`)
@@ -246,7 +259,7 @@ func TestPublicGuestResourceEditAndDeleteFollowSystemPolicy(t *testing.T) {
 		t.Fatalf("expected guest edit forbidden before policy enabled, got %d, body=%s", updateRec.Code, updateRec.Body.String())
 	}
 
-	setGuestResourcePolicy(t, db, true, true)
+	setGuestResourcePolicy(t, db, true, true, true, true)
 
 	updateReq = httptest.NewRequest(
 		http.MethodPut,
@@ -336,11 +349,13 @@ func TestOperationLogsVisibleToNormalAdmin(t *testing.T) {
 	}
 }
 
-func setGuestResourcePolicy(t *testing.T, db *gorm.DB, allowEdit bool, allowDelete bool) {
+func setGuestResourcePolicy(t *testing.T, db *gorm.DB, allowTitle bool, allowTags bool, allowDescription bool, allowDelete bool) {
 	t.Helper()
 
-	payload := `{"guest":{"allow_direct_publish":false,"extra_permissions_enabled":true,"allow_guest_resource_edit":` +
-		boolJSON(allowEdit) + `,"allow_guest_resource_delete":` + boolJSON(allowDelete) +
+	payload := `{"guest":{"allow_direct_publish":false,"extra_permissions_enabled":true,"allow_guest_edit_title":` +
+		boolJSON(allowTitle) + `,"allow_guest_edit_tags":` + boolJSON(allowTags) +
+		`,"allow_guest_edit_description":` + boolJSON(allowDescription) +
+		`,"allow_guest_resource_delete":` + boolJSON(allowDelete) +
 		`},"upload":{"max_file_size_bytes":10485760,"max_tag_count":0,"allowed_extensions":[]},"search":{"enable_fuzzy_match":true,"enable_tag_filter":true,"enable_folder_scope":true,"result_window":50}}`
 
 	var existing model.SystemSetting

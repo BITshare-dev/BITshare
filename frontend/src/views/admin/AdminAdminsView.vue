@@ -12,6 +12,7 @@ interface AdminItem {
   id: string;
   username: string;
   display_name: string;
+  avatar_url: string;
   role: string;
   status: "active" | "disabled";
   permissions: string[];
@@ -37,9 +38,10 @@ interface AdminSnapshot {
 }
 
 const sessionStore = useSessionStore();
+const canManageAdmins = computed(() => sessionStore.hasPermission("manage_admins"));
 
 const permissionOptions = [
-  { value: "audit", label: "审核（包括上传、tag、举报）" },
+  { value: "audit", label: "审核（上传、举报）" },
   { value: "direct_upload", label: "上传资料（免审核上传）" },
   { value: "edit_resources", label: "编辑资料" },
   { value: "delete_resources", label: "删除资料" },
@@ -76,11 +78,16 @@ const statusSaving = ref(false);
 const snapshots = ref<Record<string, AdminSnapshot>>({});
 
 const canCreateAdmin = computed(() => form.permissions.length > 0 && !creating.value);
+const visibleItems = computed(() => {
+  return [...items.value].sort((left, right) => {
+    if (left.id === sessionStore.adminId && right.id !== sessionStore.adminId) return -1;
+    if (right.id === sessionStore.adminId && left.id !== sessionStore.adminId) return 1;
+    return new Date(left.created_at).getTime() - new Date(right.created_at).getTime();
+  });
+});
 
 onMounted(() => {
-  if (sessionStore.hasPermission("manage_admins")) {
-    void loadItems();
-  }
+  void loadItems();
 });
 
 async function loadItems() {
@@ -276,6 +283,12 @@ async function confirmToggleStatus() {
 function closeStatusModal() {
   statusConfirmAdmin.value = null;
 }
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    dateStyle: "medium",
+  }).format(new Date(value));
+}
 </script>
 
 <template>
@@ -285,92 +298,93 @@ function closeStatusModal() {
       title="权限管理"
     />
 
-    <SurfaceCard v-if="!sessionStore.hasPermission('manage_admins')">
-      <p class="text-sm text-slate-500">当前账号没有管理员管理权限。</p>
-    </SurfaceCard>
-
-    <template v-else>
-      <section class="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
-        <SurfaceCard>
-          <h2 class="text-lg font-semibold text-slate-900">创建管理员</h2>
-          <form class="mt-6 space-y-4" @submit.prevent="createAdmin">
-            <div class="flex flex-wrap gap-2">
-              <label
-                v-for="permission in permissionOptions"
-                :key="permission.value"
-                class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-              >
-                <input v-model="form.permissions" :value="permission.value" type="checkbox" class="mr-2" />
-                {{ permission.label }}
-              </label>
-            </div>
-            <button type="submit" class="btn-primary" :disabled="!canCreateAdmin">
-              {{ creating ? "创建中…" : "创建账号" }}
-            </button>
-          </form>
-        </SurfaceCard>
-
-        <SurfaceCard>
-          <div class="flex items-center justify-between gap-4">
-            <div>
-              <h2 class="text-lg font-semibold text-slate-900">管理员列表</h2>
-            </div>
-            <button class="btn-secondary" @click="loadItems">刷新</button>
+    <section :class="canManageAdmins ? 'grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]' : 'space-y-6'">
+      <SurfaceCard v-if="canManageAdmins">
+        <h2 class="text-lg font-semibold text-slate-900">创建管理员</h2>
+        <form class="mt-6 space-y-4" @submit.prevent="createAdmin">
+          <div class="flex flex-wrap gap-2">
+            <label
+              v-for="permission in permissionOptions"
+              :key="permission.value"
+              class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+            >
+              <input v-model="form.permissions" :value="permission.value" type="checkbox" class="mr-2" />
+              {{ permission.label }}
+            </label>
           </div>
+          <button type="submit" class="btn-primary" :disabled="!canCreateAdmin">
+            {{ creating ? "创建中…" : "创建账号" }}
+          </button>
+        </form>
+      </SurfaceCard>
 
-          <div v-if="!loaded && loading" class="mt-4 text-sm text-slate-500">加载中…</div>
-          <div v-else class="mt-6 space-y-4">
-            <article v-for="item in items" :key="item.id" class="rounded-xl border border-slate-200 p-5">
-              <div class="flex flex-wrap items-start justify-between gap-4">
-                <div>
+      <SurfaceCard>
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-semibold text-slate-900">管理员列表</h2>
+          </div>
+          <button class="btn-secondary" @click="loadItems">刷新</button>
+        </div>
+
+        <div v-if="!loaded && loading" class="mt-4 text-sm text-slate-500">加载中…</div>
+        <div v-else class="mt-6 space-y-4">
+          <article v-for="item in visibleItems" :key="item.id" class="rounded-xl border border-slate-200 p-4">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+              <div class="flex min-w-0 items-start gap-3">
+                <div class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-100 text-base font-semibold text-slate-700">
+                  <img v-if="item.avatar_url" :src="item.avatar_url" alt="管理员头像" class="h-full w-full object-cover" />
+                  <span v-else>{{ item.display_name.slice(0, 1).toUpperCase() || "A" }}</span>
+                </div>
+                <div class="min-w-0">
                   <div class="flex flex-wrap items-center gap-2">
-                    <h3 class="text-base font-semibold text-slate-900">{{ item.display_name }}</h3>
+                    <h3 class="text-sm font-semibold text-slate-900 sm:text-base">{{ item.display_name }}</h3>
+                    <span v-if="item.id === sessionStore.adminId" class="rounded-lg bg-blue-50 px-2.5 py-1 text-xs text-blue-700">当前账号</span>
                     <span class="rounded-lg bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{{ item.role }}</span>
                     <span class="rounded-lg bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{{ item.status }}</span>
                   </div>
-                  <p class="mt-2 text-sm text-slate-500">标示ID：{{ item.username }}</p>
+                  <p class="mt-1.5 text-xs text-slate-500 sm:text-sm">标示ID：{{ item.username }} · 创建时间：{{ formatDate(item.created_at) }}</p>
                 </div>
-                <div v-if="item.role !== 'super_admin'" class="flex gap-2">
+              </div>
+              <div v-if="canManageAdmins && item.role !== 'super_admin'" class="flex shrink-0 gap-1.5 self-start">
+                <button
+                  class="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 sm:text-sm"
+                  @click="toggleAdminStatus(item)"
+                >
+                  {{ item.status === "active" ? "停用账号" : "重新启用" }}
+                </button>
+                <button class="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 sm:text-sm" @click="resetPassword(item)">重置密码</button>
+                <button class="inline-flex h-8 items-center rounded-lg bg-rose-600 px-3 text-xs font-medium text-white transition hover:bg-rose-700 sm:text-sm" @click="deleteAdmin(item)">删除</button>
+              </div>
+            </div>
+
+            <div v-if="canManageAdmins && item.role !== 'super_admin'" class="mt-4 space-y-4">
+              <div class="flex items-start justify-between gap-4">
+                <div class="flex flex-1 flex-wrap gap-2">
                   <button
-                    class="inline-flex h-10 items-center rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-                    @click="toggleAdminStatus(item)"
+                    v-for="permission in permissionOptions"
+                    :key="permission.value"
+                    type="button"
+                    class="rounded-xl border px-3 py-1.5 text-[13px] transition"
+                    :class="hasSelectedPermission(item, permission.value) ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'"
+                    @click="togglePermission(item, permission.value)"
                   >
-                    {{ item.status === "active" ? "停用账号" : "重新启用" }}
-                  </button>
-                  <button class="inline-flex h-10 items-center rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900" @click="resetPassword(item)">重置密码</button>
-                  <button class="inline-flex h-10 items-center rounded-xl bg-rose-600 px-4 text-sm font-medium text-white transition hover:bg-rose-700" @click="deleteAdmin(item)">删除</button>
-                </div>
-              </div>
-
-              <div v-if="item.role !== 'super_admin'" class="mt-4 space-y-4">
-                <div class="flex items-start justify-between gap-4">
-                  <div class="flex flex-1 flex-wrap gap-2">
-                    <button
-                      v-for="permission in permissionOptions"
-                      :key="permission.value"
-                      type="button"
-                      class="rounded-xl border px-3 py-1.5 text-[13px] transition"
-                      :class="hasSelectedPermission(item, permission.value) ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'"
-                      @click="togglePermission(item, permission.value)"
-                    >
-                      {{ permission.label }}
-                    </button>
-                  </div>
-                  <button class="btn-primary shrink-0" :disabled="!isAdminDirty(item)" @click="saveAdmin(item)">
-                    保存
+                    {{ permission.label }}
                   </button>
                 </div>
+                <button class="btn-primary shrink-0" :disabled="!isAdminDirty(item)" @click="saveAdmin(item)">
+                  保存
+                </button>
               </div>
-            </article>
+            </div>
+          </article>
 
-            <EmptyState v-if="items.length === 0" title="当前没有管理员数据" description="创建新的管理员账号后，这里会展示账号状态和权限。" />
-          </div>
-        </SurfaceCard>
-      </section>
+          <EmptyState v-if="visibleItems.length === 0" title="当前没有管理员数据" description="创建新的管理员账号后，这里会展示账号状态和权限。" />
+        </div>
+      </SurfaceCard>
+    </section>
 
-      <p v-if="message" class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ message }}</p>
-      <p v-if="error" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ error }}</p>
-    </template>
+    <p v-if="message" class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ message }}</p>
+    <p v-if="error" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ error }}</p>
 
     <div v-if="createdCredentials" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4">
       <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">

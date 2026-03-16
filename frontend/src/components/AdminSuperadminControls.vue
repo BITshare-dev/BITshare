@@ -9,7 +9,9 @@ interface SystemPolicy {
   guest: {
     allow_direct_publish: boolean;
     extra_permissions_enabled: boolean;
-    allow_guest_resource_edit: boolean;
+    allow_guest_edit_title: boolean;
+    allow_guest_edit_tags: boolean;
+    allow_guest_edit_description: boolean;
     allow_guest_resource_delete: boolean;
   };
   upload: {
@@ -49,7 +51,9 @@ const form = reactive<SystemPolicy>({
   guest: {
     allow_direct_publish: false,
     extra_permissions_enabled: false,
-    allow_guest_resource_edit: false,
+    allow_guest_edit_title: false,
+    allow_guest_edit_tags: false,
+    allow_guest_edit_description: false,
     allow_guest_resource_delete: false,
   },
   upload: {
@@ -93,7 +97,11 @@ async function saveGuestPolicy() {
   guestSaving.value = true;
   error.value = "";
   message.value = "";
-  form.guest.extra_permissions_enabled = form.guest.allow_guest_resource_edit || form.guest.allow_guest_resource_delete;
+  form.guest.extra_permissions_enabled =
+    form.guest.allow_guest_edit_title ||
+    form.guest.allow_guest_edit_tags ||
+    form.guest.allow_guest_edit_description ||
+    form.guest.allow_guest_resource_delete;
   applyBuiltinSearchPolicy();
 
   try {
@@ -114,7 +122,11 @@ async function saveUploadPolicy() {
   uploadSaving.value = true;
   error.value = "";
   message.value = "";
-  form.guest.extra_permissions_enabled = form.guest.allow_guest_resource_edit || form.guest.allow_guest_resource_delete;
+  form.guest.extra_permissions_enabled =
+    form.guest.allow_guest_edit_title ||
+    form.guest.allow_guest_edit_tags ||
+    form.guest.allow_guest_edit_description ||
+    form.guest.allow_guest_resource_delete;
   form.upload.max_file_size_bytes = toBytes(uploadSizeValue.value, uploadSizeUnit.value);
   form.upload.max_tag_count = 0;
   form.upload.allowed_extensions = [];
@@ -144,7 +156,9 @@ function applyBuiltinSearchPolicy() {
 function serializeGuestState() {
   return JSON.stringify({
     allow_direct_publish: form.guest.allow_direct_publish,
-    allow_guest_resource_edit: form.guest.allow_guest_resource_edit,
+    allow_guest_edit_title: form.guest.allow_guest_edit_title,
+    allow_guest_edit_tags: form.guest.allow_guest_edit_tags,
+    allow_guest_edit_description: form.guest.allow_guest_edit_description,
     allow_guest_resource_delete: form.guest.allow_guest_resource_delete,
   });
 }
@@ -280,7 +294,9 @@ async function importDirectory() {
         </div>
         <div class="grid gap-3">
           <label class="panel-muted flex items-center gap-3 p-4 text-sm text-slate-700"><input v-model="form.guest.allow_direct_publish" type="checkbox" />允许游客免审核上传</label>
-          <label class="panel-muted flex items-center gap-3 p-4 text-sm text-slate-700"><input v-model="form.guest.allow_guest_resource_edit" type="checkbox" />允许访客编辑资料</label>
+          <label class="panel-muted flex items-center gap-3 p-4 text-sm text-slate-700"><input v-model="form.guest.allow_guest_edit_title" type="checkbox" />允许访客编辑文件名</label>
+          <label class="panel-muted flex items-center gap-3 p-4 text-sm text-slate-700"><input v-model="form.guest.allow_guest_edit_tags" type="checkbox" />允许访客编辑 Tag</label>
+          <label class="panel-muted flex items-center gap-3 p-4 text-sm text-slate-700"><input v-model="form.guest.allow_guest_edit_description" type="checkbox" />允许访客编辑文件描述</label>
           <label class="panel-muted flex items-center gap-3 p-4 text-sm text-slate-700"><input v-model="form.guest.allow_guest_resource_delete" type="checkbox" />允许访客删除资料</label>
         </div>
         <button type="submit" class="btn-primary" :disabled="guestSaving || !guestDirty">

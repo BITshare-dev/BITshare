@@ -260,6 +260,15 @@ type AdminSession struct {
 	Admin Admin `gorm:"foreignKey:AdminID"`
 }
 
+// SiteVisitEvent records a page-level site visit used for IP metrics.
+type SiteVisitEvent struct {
+	ID        EntityID  `gorm:"column:id;type:text;primaryKey"`
+	Scope     string    `gorm:"column:scope;type:text;not null;default:''"`
+	Path      string    `gorm:"column:path;type:text;not null;default:''"`
+	IP        string    `gorm:"column:ip;type:text;not null;default:'';index:idx_site_visit_events_ip_created_at"`
+	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime;index:idx_site_visit_events_created_at,sort:desc"`
+}
+
 // DownloadEvent records each successful public download for time-based metrics.
 type DownloadEvent struct {
 	ID        EntityID  `gorm:"column:id;type:text;primaryKey"`
@@ -288,11 +297,11 @@ type TagSubmission struct {
 
 // SystemSetting stores extensible JSON-backed management policy blobs.
 type SystemSetting struct {
-	Key         string     `gorm:"column:key;type:text;primaryKey"`
-	Value       string     `gorm:"column:value;type:text;not null;default:''"`
-	UpdatedByID *EntityID  `gorm:"column:updated_by_id;type:text"`
-	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt   time.Time  `gorm:"column:updated_at;autoUpdateTime"`
+	Key         string    `gorm:"column:key;type:text;primaryKey"`
+	Value       string    `gorm:"column:value;type:text;not null;default:''"`
+	UpdatedByID *EntityID `gorm:"column:updated_by_id;type:text"`
+	CreatedAt   time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt   time.Time `gorm:"column:updated_at;autoUpdateTime"`
 
 	UpdatedBy *Admin `gorm:"foreignKey:UpdatedByID"`
 }
@@ -301,17 +310,18 @@ type SystemSetting struct {
 // Table name overrides
 // ---------------------------------------------------------------------------
 
-func (Admin) TableName() string         { return "admins" }
-func (Folder) TableName() string        { return "folders" }
-func (File) TableName() string          { return "files" }
-func (Submission) TableName() string    { return "submissions" }
-func (Tag) TableName() string           { return "tags" }
-func (FileTag) TableName() string       { return "file_tags" }
-func (FolderTag) TableName() string     { return "folder_tags" }
-func (Report) TableName() string        { return "reports" }
-func (Announcement) TableName() string  { return "announcements" }
-func (OperationLog) TableName() string  { return "operation_logs" }
-func (AdminSession) TableName() string  { return "admin_sessions" }
-func (DownloadEvent) TableName() string { return "download_events" }
-func (TagSubmission) TableName() string { return "tag_submissions" }
-func (SystemSetting) TableName() string { return "system_settings" }
+func (Admin) TableName() string          { return "admins" }
+func (Folder) TableName() string         { return "folders" }
+func (File) TableName() string           { return "files" }
+func (Submission) TableName() string     { return "submissions" }
+func (Tag) TableName() string            { return "tags" }
+func (FileTag) TableName() string        { return "file_tags" }
+func (FolderTag) TableName() string      { return "folder_tags" }
+func (Report) TableName() string         { return "reports" }
+func (Announcement) TableName() string   { return "announcements" }
+func (OperationLog) TableName() string   { return "operation_logs" }
+func (AdminSession) TableName() string   { return "admin_sessions" }
+func (SiteVisitEvent) TableName() string { return "site_visit_events" }
+func (DownloadEvent) TableName() string  { return "download_events" }
+func (TagSubmission) TableName() string  { return "tag_submissions" }
+func (SystemSetting) TableName() string  { return "system_settings" }

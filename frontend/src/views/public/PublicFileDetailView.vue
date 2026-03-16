@@ -25,7 +25,9 @@ interface FileDetailResponse {
 
 interface PublicPolicyResponse {
   guest: {
-    allow_guest_resource_edit: boolean;
+    allow_guest_edit_title: boolean;
+    allow_guest_edit_tags: boolean;
+    allow_guest_edit_description: boolean;
     allow_guest_resource_delete: boolean;
   };
 }
@@ -109,7 +111,10 @@ async function loadPolicy() {
   }
 }
 
-const canEdit = computed(() => !!guestPolicy.value?.allow_guest_resource_edit);
+const canEditTitle = computed(() => !!guestPolicy.value?.allow_guest_edit_title);
+const canEditTags = computed(() => !!guestPolicy.value?.allow_guest_edit_tags);
+const canEditDescription = computed(() => !!guestPolicy.value?.allow_guest_edit_description);
+const canEdit = computed(() => canEditTitle.value || canEditTags.value || canEditDescription.value);
 const canDelete = computed(() => !!guestPolicy.value?.allow_guest_resource_delete);
 
 async function savePublicEdit() {
@@ -277,9 +282,9 @@ function formatSize(size: number) {
         </div>
 
         <form v-if="canEdit" class="mt-6 space-y-4" @submit.prevent="savePublicEdit">
-          <input v-model="editTitle" class="field" />
-          <textarea v-model="editDescription" rows="4" class="field-area" />
-          <input v-model="editTags" placeholder="Tag, 用逗号分隔" class="field" />
+          <input v-if="canEditTitle" v-model="editTitle" class="field" />
+          <textarea v-if="canEditDescription" v-model="editDescription" rows="4" class="field-area" />
+          <input v-if="canEditTags" v-model="editTags" placeholder="Tag, 用逗号分隔" class="field" />
           <button type="submit" class="btn-primary" :disabled="saving">
             {{ saving ? "保存中…" : "保存修改" }}
           </button>

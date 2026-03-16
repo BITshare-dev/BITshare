@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { CalendarClock, Download, Files } from "lucide-vue-next";
+import { CalendarClock, Download, Files, Users } from "lucide-vue-next";
 
 import AdminSuperadminControls from "../../components/AdminSuperadminControls.vue";
 import StatCard from "../../components/StatCard.vue";
@@ -15,8 +15,10 @@ interface MetricItem {
 }
 
 interface DashboardStatsResponse {
+  total_visitor_ips: number;
   total_files: number;
   total_downloads: number;
+  recent_visitor_ips: number;
   recent_files: number;
   recent_downloads: number;
 }
@@ -24,6 +26,12 @@ interface DashboardStatsResponse {
 const sessionStore = useSessionStore();
 const loading = ref(true);
 const metrics = ref<MetricItem[]>([
+  {
+    title: "总访问IP数",
+    value: "--",
+    hint: "",
+    icon: Users,
+  },
   {
     title: "总资料数",
     value: "--",
@@ -35,6 +43,12 @@ const metrics = ref<MetricItem[]>([
     value: "--",
     hint: "",
     icon: Download,
+  },
+  {
+    title: "近7天访问IP数",
+    value: "--",
+    hint: "",
+    icon: Users,
   },
   {
     title: "近7天新增资料数",
@@ -63,13 +77,17 @@ async function loadMetrics() {
 async function loadDashboardStats() {
   try {
     const response = await httpClient.get<DashboardStatsResponse>("/admin/dashboard/stats");
-    setMetric("总资料数", response.total_files);
-    setMetric("总下载数", response.total_downloads);
-    setMetric("近7天新增资料数", response.recent_files);
-    setMetric("近7天下载数", response.recent_downloads);
+    setMetric("总访问IP数", response.total_visitor_ips ?? 0);
+    setMetric("总资料数", response.total_files ?? 0);
+    setMetric("总下载数", response.total_downloads ?? 0);
+    setMetric("近7天访问IP数", response.recent_visitor_ips ?? 0);
+    setMetric("近7天新增资料数", response.recent_files ?? 0);
+    setMetric("近7天下载数", response.recent_downloads ?? 0);
   } catch {
+    setMetric("总访问IP数", "--");
     setMetric("总资料数", "--");
     setMetric("总下载数", "--");
+    setMetric("近7天访问IP数", "--");
     setMetric("近7天新增资料数", "--");
     setMetric("近7天下载数", "--");
   }
@@ -92,7 +110,7 @@ function setMetric(title: string, value: string | number) {
       </div>
     </header>
 
-    <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       <StatCard
         v-for="metric in metrics"
         :key="metric.title"

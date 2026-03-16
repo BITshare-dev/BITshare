@@ -15,10 +15,12 @@ import (
 const systemPolicyKey = "system_policy"
 
 type GuestPolicy struct {
-	AllowDirectPublish       bool `json:"allow_direct_publish"`
-	ExtraPermissionsEnabled  bool `json:"extra_permissions_enabled"`
-	AllowGuestResourceEdit   bool `json:"allow_guest_resource_edit"`
-	AllowGuestResourceDelete bool `json:"allow_guest_resource_delete"`
+	AllowDirectPublish          bool `json:"allow_direct_publish"`
+	ExtraPermissionsEnabled     bool `json:"extra_permissions_enabled"`
+	AllowGuestEditTitle         bool `json:"allow_guest_edit_title"`
+	AllowGuestEditTags          bool `json:"allow_guest_edit_tags"`
+	AllowGuestEditDescription   bool `json:"allow_guest_edit_description"`
+	AllowGuestResourceDelete    bool `json:"allow_guest_resource_delete"`
 }
 
 type UploadPolicy struct {

@@ -186,7 +186,7 @@ func (s *ResourceManagementService) PublicUpdateFile(ctx context.Context, fileID
 	if err != nil {
 		return err
 	}
-	if !policy.AllowGuestResourceEdit {
+	if !policy.AllowGuestEditTitle && !policy.AllowGuestEditTags && !policy.AllowGuestEditDescription {
 		return ErrInvalidResourceEdit
 	}
 
@@ -198,8 +198,26 @@ func (s *ResourceManagementService) PublicUpdateFile(ctx context.Context, fileID
 		return ErrManagedFileNotFound
 	}
 
-	input.OperatorID = ""
-	return s.UpdateFile(ctx, fileID, input)
+	merged := input
+	if !policy.AllowGuestEditTitle {
+		merged.Title = current.Title
+	}
+	if !policy.AllowGuestEditDescription {
+		merged.Description = current.Description
+	}
+	if !policy.AllowGuestEditTags {
+		tagRows, err := s.repo.ListFileTags(ctx, []string{current.ID})
+		if err != nil {
+			return fmt.Errorf("list current file tags: %w", err)
+		}
+		merged.Tags = make([]string, 0, len(tagRows))
+		for _, row := range tagRows {
+			merged.Tags = append(merged.Tags, row.TagName)
+		}
+	}
+
+	merged.OperatorID = ""
+	return s.UpdateFile(ctx, fileID, merged)
 }
 
 func (s *ResourceManagementService) PublicDeleteFile(ctx context.Context, fileID string, operatorIP string) error {

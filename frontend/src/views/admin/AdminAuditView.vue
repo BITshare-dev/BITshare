@@ -198,15 +198,6 @@ function formatSize(size: number) {
       </SurfaceCard>
 
       <SurfaceCard class="space-y-5">
-        <div>
-          <h2 class="text-lg font-semibold text-slate-900">Tag 审核</h2>
-        </div>
-        <div class="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-sm text-slate-500">
-          Tag 审核功能暂未接入。
-        </div>
-      </SurfaceCard>
-
-      <SurfaceCard class="space-y-5">
         <div class="flex items-start justify-between gap-4">
           <div>
             <h2 class="text-lg font-semibold text-slate-900">举报审核</h2>

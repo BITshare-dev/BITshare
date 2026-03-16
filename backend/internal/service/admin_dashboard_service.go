@@ -14,10 +14,12 @@ type AdminDashboardService struct {
 }
 
 type AdminDashboardStats struct {
-	TotalFiles      int64 `json:"total_files"`
-	TotalDownloads  int64 `json:"total_downloads"`
-	RecentFiles     int64 `json:"recent_files"`
-	RecentDownloads int64 `json:"recent_downloads"`
+	TotalVisitorIPs  int64 `json:"total_visitor_ips"`
+	TotalFiles       int64 `json:"total_files"`
+	TotalDownloads   int64 `json:"total_downloads"`
+	RecentVisitorIPs int64 `json:"recent_visitor_ips"`
+	RecentFiles      int64 `json:"recent_files"`
+	RecentDownloads  int64 `json:"recent_downloads"`
 }
 
 func NewAdminDashboardService(repo *repository.AdminDashboardRepository) *AdminDashboardService {
@@ -35,9 +37,11 @@ func (s *AdminDashboardService) GetStats(ctx context.Context) (*AdminDashboardSt
 	}
 
 	return &AdminDashboardStats{
-		TotalFiles:      row.TotalFiles,
-		TotalDownloads:  row.TotalDownloads,
-		RecentFiles:     row.RecentFiles,
-		RecentDownloads: row.RecentDownloads,
+		TotalVisitorIPs:  row.TotalVisitorIPs,
+		TotalFiles:       row.TotalFiles,
+		TotalDownloads:   row.TotalDownloads,
+		RecentVisitorIPs: row.RecentVisitorIPs,
+		RecentFiles:      row.RecentFiles,
+		RecentDownloads:  row.RecentDownloads,
 	}, nil
 }

@@ -43,6 +43,7 @@ async function restoreSession() {
   try {
     const response = await httpClient.get<AdminMeResponse>("/admin/me");
     applySession(response);
+    await trackVisit();
   } catch {
     sessionStore.reset();
   } finally {
@@ -60,6 +61,7 @@ async function login() {
       password: password.value,
     });
     applySession(response);
+    await trackVisit();
     password.value = "";
   } catch (error: unknown) {
     loginError.value = readApiError(error) ?? "登录失败，请重试。";
@@ -90,6 +92,20 @@ function readApiError(error: unknown) {
   }
   const payload = error.payload as Record<string, unknown>;
   return typeof payload.error === "string" ? payload.error : null;
+}
+
+async function trackVisit() {
+  try {
+    await httpClient.request("/visits", {
+      method: "POST",
+      body: {
+        scope: "admin",
+        path: route.path,
+      },
+    });
+  } catch {
+    // Ignore analytics failures.
+  }
 }
 </script>
 

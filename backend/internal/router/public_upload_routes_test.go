@@ -349,7 +349,7 @@ func createPendingSubmissionForTest(t *testing.T, db *gorm.DB, receiptCode strin
 func setDirectPublishPolicy(t *testing.T, db *gorm.DB) {
 	t.Helper()
 
-	payload := `{"guest":{"allow_direct_publish":true,"extra_permissions_enabled":false,"allow_guest_resource_edit":false,"allow_guest_resource_delete":false},"upload":{"max_file_size_bytes":10485760,"max_tag_count":0,"allowed_extensions":[]},"search":{"enable_fuzzy_match":true,"enable_tag_filter":true,"enable_folder_scope":true,"result_window":50}}`
+	payload := `{"guest":{"allow_direct_publish":true,"extra_permissions_enabled":false,"allow_guest_edit_title":false,"allow_guest_edit_tags":false,"allow_guest_edit_description":false,"allow_guest_resource_delete":false},"upload":{"max_file_size_bytes":10485760,"max_tag_count":0,"allowed_extensions":[]},"search":{"enable_fuzzy_match":true,"enable_tag_filter":true,"enable_folder_scope":true,"result_window":50}}`
 	if err := db.Create(&model.SystemSetting{
 		Key:       "system_policy",
 		Value:     payload,

@@ -33,6 +33,7 @@ type ManagedAdminItem struct {
 	ID          string                  `json:"id"`
 	Username    string                  `json:"username"`
 	DisplayName string                  `json:"display_name"`
+	AvatarURL   string                  `json:"avatar_url"`
 	Role        string                  `json:"role"`
 	Status      model.AdminStatus       `json:"status"`
 	Permissions []model.AdminPermission `json:"permissions"`
@@ -293,6 +294,7 @@ func mapManagedAdmin(admin model.Admin) ManagedAdminItem {
 		ID:          admin.ID,
 		Username:    admin.Username,
 		DisplayName: admin.DisplayName,
+		AvatarURL:   admin.AvatarURL,
 		Role:        admin.Role,
 		Status:      admin.Status,
 		Permissions: admin.PermissionList(),
