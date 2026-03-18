@@ -1,45 +1,47 @@
-# OS / editor metadata
+### System and IDE
 .DS_Store
+.idea/
+.vscode/
 Thumbs.db
-/.idea/
-/.vscode/
+*.swp
+*.swo
 
-# Environment and local-only config
-/.env
-/.env.*
-!/.env.example
-/backend/configs/config.local.json
+### Environment (Secret)
+.env
+.env.*
+!.env.example
 
-# Logs and process markers
-*.log
-*.pid
-/.pids/
-
-# Frontend dependencies and build outputs
+### Frontend (Vue/NPM)
+# Dependencies
 /frontend/node_modules/
+# Build Output
 /frontend/dist/
-/frontend/coverage/
 /frontend/.cache/
+/frontend/coverage/
 /frontend/tsconfig.tsbuildinfo
+# Logs
+/frontend/npm-debug.log*
+/frontend/yarn-debug.log*
+/frontend/yarn-error.log*
+/frontend/pnpm-debug.log*
+# Local Environment
+/frontend/.env.local
+/frontend/.env.*.local
 
-# Backend build and embedded web assets
+### Backend (Go)
+# Build Artifacts (Binaries & Temp)
 /backend/bin/
 /backend/tmp/
 /backend/.air/
+# Generated Frontend Assets in Backend
 /backend/web/dist/
+# Local Configuration (Secrets)
+/backend/configs/config.local.json
+/backend/.env
 
-# Top-level runtime storage
+### Backend (Data)
+# Runtime Local Data
 /.localdata/
-/repository/
-/staging/
-/trash/
-/storage/
-/tmp/
-/temp/
 
-# Top-level local databases
-/*.db
-/*.db-shm
-/*.db-wal
-/*.sqlite
-/*.sqlite3
+### General Logs
+*.log
