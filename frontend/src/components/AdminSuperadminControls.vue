@@ -531,9 +531,10 @@ async function confirmDeleteManagedFolder(folderID: string) {
     <p v-if="importError" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ importError }}</p>
 
     <Teleport to="body">
+    <Transition name="modal-shell">
     <div v-if="directoryPickerOpen" class="fixed inset-0 z-[120] overflow-hidden bg-slate-950/40 backdrop-blur-sm">
       <div class="flex h-full items-start justify-center px-4 py-6">
-      <SurfaceCard class="w-full max-w-3xl overflow-hidden">
+      <SurfaceCard class="modal-card w-full max-w-3xl overflow-hidden">
         <div class="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
           <div>
             <h3 class="text-lg font-semibold text-slate-900">选择服务器目录</h3>
@@ -601,6 +602,7 @@ async function confirmDeleteManagedFolder(folderID: string) {
       </SurfaceCard>
       </div>
     </div>
+    </Transition>
     </Teleport>
   </section>
 </template>

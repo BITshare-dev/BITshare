@@ -157,6 +157,37 @@ func (s *PublicDownloadService) PrepareBatchDownload(ctx context.Context, fileID
 	return items, nil
 }
 
+func (s *PublicDownloadService) PrepareResourceBatchDownload(ctx context.Context, fileIDs []string, folderIDs []string) ([]BatchDownloadFile, error) {
+	normalizedFiles := normalizeBatchFileIDs(fileIDs)
+	normalizedFolders := normalizeBatchFileIDs(folderIDs)
+	if len(normalizedFiles) == 0 && len(normalizedFolders) == 0 {
+		return nil, ErrBatchDownloadInvalid
+	}
+
+	items := make([]BatchDownloadFile, 0, len(normalizedFiles))
+	if len(normalizedFiles) > 0 {
+		files, err := s.PrepareBatchDownload(ctx, normalizedFiles)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, files...)
+	}
+
+	for _, folderID := range normalizedFolders {
+		folderDownload, err := s.PrepareFolderDownload(ctx, folderID)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, folderDownload.Items...)
+	}
+
+	if len(items) == 0 {
+		return nil, ErrBatchDownloadInvalid
+	}
+
+	return items, nil
+}
+
 func (s *PublicDownloadService) PrepareFolderDownload(ctx context.Context, folderID string) (*FolderDownload, error) {
 	folderID = strings.TrimSpace(folderID)
 	if folderID == "" {

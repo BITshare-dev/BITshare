@@ -427,6 +427,15 @@ func TestPublicUploadAcceptsManifestBatchWithRelativePaths(t *testing.T) {
 	if submissions[0].RelativePathSnapshot == "" || submissions[1].RelativePathSnapshot == "" {
 		t.Fatalf("expected relative path snapshots to be stored, got %+v", submissions)
 	}
+	expectedPaths := map[string]string{
+		"notes": "批量目录/课程资料/高数/notes.pdf",
+		"习题":    "批量目录/课程资料/高数/习题.docx",
+	}
+	for _, submission := range submissions {
+		if submission.RelativePathSnapshot != expectedPaths[submission.TitleSnapshot] {
+			t.Fatalf("unexpected relative path snapshot for %q: %q", submission.TitleSnapshot, submission.RelativePathSnapshot)
+		}
+	}
 }
 
 func TestPublicUploadRejectsInvalidManifest(t *testing.T) {

@@ -384,8 +384,9 @@ function formatDate(value: string) {
     <p v-if="message" class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ message }}</p>
     <p v-if="error" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ error }}</p>
 
+    <Transition name="modal-shell">
     <div v-if="createdCredentials" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4">
-      <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+      <div class="modal-card w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
         <div>
           <div>
             <h3 class="text-lg font-semibold text-slate-900">管理员已创建</h3>
@@ -413,9 +414,11 @@ function formatDate(value: string) {
         </div>
       </div>
     </div>
+    </Transition>
 
+    <Transition name="modal-shell">
     <div v-if="deletingAdmin" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4">
-      <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+      <div class="modal-card w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
         <div>
           <h3 class="text-lg font-semibold text-slate-900">确认删除管理员</h3>
           <p class="mt-2 text-sm leading-6 text-slate-500">
@@ -432,9 +435,11 @@ function formatDate(value: string) {
         </div>
       </div>
     </div>
+    </Transition>
 
+    <Transition name="modal-shell">
     <div v-if="resettingAdmin" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4">
-      <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+      <div class="modal-card w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
         <div>
           <h3 class="text-lg font-semibold text-slate-900">重置密码</h3>
           <p class="mt-2 text-sm leading-6 text-slate-500">
@@ -459,9 +464,11 @@ function formatDate(value: string) {
         </div>
       </div>
     </div>
+    </Transition>
 
+    <Transition name="modal-shell">
     <div v-if="statusConfirmAdmin" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4">
-      <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+      <div class="modal-card w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
         <div>
           <h3 class="text-lg font-semibold text-slate-900">{{ statusConfirmAdmin.status === "active" ? "停用账号" : "重新启用" }}</h3>
           <p class="mt-2 text-sm leading-6 text-slate-500">
@@ -477,5 +484,6 @@ function formatDate(value: string) {
         </div>
       </div>
     </div>
+    </Transition>
   </section>
 </template>

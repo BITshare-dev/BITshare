@@ -286,8 +286,9 @@ function notifyPendingAuditChanged() {
   </section>
 
   <Teleport to="body">
+    <Transition name="modal-shell">
     <div v-if="submissionRejectTarget" class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/30 px-4">
-      <div class="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+      <div class="modal-card w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
         <div class="border-b border-slate-200 pb-4">
           <h3 class="text-lg font-semibold text-slate-900">驳回上传</h3>
           <p class="mt-2 text-sm leading-6 text-slate-500">填写驳回原因后，用户可在回执查询页看到驳回说明。</p>
@@ -313,11 +314,13 @@ function notifyPendingAuditChanged() {
         </div>
       </div>
     </div>
+    </Transition>
   </Teleport>
 
   <Teleport to="body">
+    <Transition name="modal-shell">
     <div v-if="reportReviewTarget" class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/30 px-4">
-      <div class="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+      <div class="modal-card w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
         <div class="border-b border-slate-200 pb-4">
           <h3 class="text-lg font-semibold text-slate-900">{{ reportReviewMode === "approve" ? "处理反馈" : "驳回反馈" }}</h3>
           <p class="mt-2 text-sm leading-6 text-slate-500">
@@ -349,5 +352,6 @@ function notifyPendingAuditChanged() {
         </div>
       </div>
     </div>
+    </Transition>
   </Teleport>
 </template>

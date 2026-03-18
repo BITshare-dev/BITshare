@@ -105,6 +105,10 @@ func (s *PublicUploadService) CreateSubmission(ctx context.Context, input Public
 	if rootFolder == nil || rootFolder.SourcePath == nil || strings.TrimSpace(*rootFolder.SourcePath) == "" {
 		return nil, ErrUploadFolderNotFound
 	}
+	rootFolderDisplayPath, err := s.folderDisplayPath(ctx, rootFolder)
+	if err != nil {
+		return nil, fmt.Errorf("resolve upload folder path: %w", err)
+	}
 
 	receiptCode, err := s.resolveReceiptCode(ctx, normalized.ReceiptCode)
 	if err != nil {
@@ -168,7 +172,7 @@ func (s *PublicUploadService) CreateSubmission(ctx context.Context, input Public
 			ReceiptCode:          receiptCode,
 			TitleSnapshot:        entry.Title,
 			DescriptionSnapshot:  normalized.Description,
-			RelativePathSnapshot: entry.RelativePath,
+			RelativePathSnapshot: joinSubmissionPath(rootFolderDisplayPath, entry.RelativePath),
 			Status:               model.SubmissionStatusPending,
 			UploaderIP:           normalized.UploaderIP,
 			CreatedAt:            now,
@@ -367,6 +371,56 @@ func (s *PublicUploadService) ensureTargetFolderForUpload(ctx context.Context, r
 		return nil, fmt.Errorf("ensure upload folder path: %w", err)
 	}
 	return targetFolder, nil
+}
+
+func (s *PublicUploadService) folderDisplayPath(ctx context.Context, folder *model.Folder) (string, error) {
+	if folder == nil {
+		return "", nil
+	}
+
+	segments := []string{strings.TrimSpace(folder.Name)}
+	parentID := folder.ParentID
+
+	for parentID != nil && strings.TrimSpace(*parentID) != "" {
+		parent, err := s.repository.FindActiveFolderByID(ctx, *parentID)
+		if err != nil {
+			return "", fmt.Errorf("find ancestor folder: %w", err)
+		}
+		if parent == nil {
+			break
+		}
+		segments = append(segments, strings.TrimSpace(parent.Name))
+		parentID = parent.ParentID
+	}
+
+	for i, j := 0, len(segments)-1; i < j; i, j = i+1, j-1 {
+		segments[i], segments[j] = segments[j], segments[i]
+	}
+
+	filtered := make([]string, 0, len(segments))
+	for _, segment := range segments {
+		segment = repository.NormalizeRelativePathForStorage(segment)
+		if segment == "" {
+			continue
+		}
+		filtered = append(filtered, segment)
+	}
+
+	return strings.Join(filtered, "/"), nil
+}
+
+func joinSubmissionPath(basePath, relativePath string) string {
+	basePath = repository.NormalizeRelativePathForStorage(basePath)
+	relativePath = repository.NormalizeRelativePathForStorage(relativePath)
+
+	switch {
+	case basePath == "":
+		return relativePath
+	case relativePath == "":
+		return basePath
+	default:
+		return basePath + "/" + relativePath
+	}
 }
 
 func (s *PublicUploadService) effectivePolicy(ctx context.Context) SystemPolicy {

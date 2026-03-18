@@ -39,6 +39,14 @@
     color: #0f172a;
   }
 
+  button,
+  a,
+  input,
+  textarea,
+  select {
+    -webkit-tap-highlight-color: transparent;
+  }
+
   #app {
     min-height: 100vh;
   }
@@ -70,7 +78,7 @@
   }
 
   .panel {
-    @apply rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-950/[0.03] dark:border-slate-800 dark:bg-slate-900 dark:shadow-none;
+    @apply rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-950/[0.03] transition-[transform,box-shadow,border-color] duration-200 dark:border-slate-800 dark:bg-slate-900 dark:shadow-none;
   }
 
   .panel-muted {
@@ -78,23 +86,23 @@
   }
 
   .field {
-    @apply h-11 w-full rounded-lg border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-slate-500 dark:focus:ring-slate-800;
+    @apply h-11 w-full rounded-lg border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition-[border-color,box-shadow,transform] duration-200 placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-slate-500 dark:focus:ring-slate-800;
   }
 
   .field-area {
-    @apply w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-slate-500 dark:focus:ring-slate-800;
+    @apply w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-[border-color,box-shadow,transform] duration-200 placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-slate-500 dark:focus:ring-slate-800;
   }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white;
+    @apply inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-[transform,background-color,box-shadow,opacity] duration-200 hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-md hover:shadow-slate-950/[0.12] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800;
+    @apply inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-[transform,background-color,border-color,box-shadow,opacity] duration-200 hover:-translate-y-0.5 hover:bg-slate-100 hover:shadow-sm hover:shadow-slate-950/[0.08] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800;
   }
 
   .btn-danger {
-    @apply inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-950/60;
+    @apply inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-700 transition-[transform,background-color,border-color,box-shadow,opacity] duration-200 hover:-translate-y-0.5 hover:bg-rose-100 hover:shadow-sm hover:shadow-rose-950/[0.08] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-950/60;
   }
 
   .data-table {
@@ -144,5 +152,44 @@
 
   .markdown-content code {
     @apply rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[0.92em] text-slate-700 dark:bg-slate-800 dark:text-slate-200;
+  }
+}
+
+@layer utilities {
+  .modal-card {
+    @apply will-change-transform;
+  }
+
+}
+
+.modal-shell-enter-active,
+.modal-shell-leave-active {
+  transition: opacity 220ms ease;
+}
+
+.modal-shell-enter-active .modal-card,
+.modal-shell-leave-active .modal-card {
+  transition: opacity 240ms ease, transform 280ms ease;
+}
+
+.modal-shell-enter-from,
+.modal-shell-leave-to {
+  opacity: 0;
+}
+
+.modal-shell-enter-from .modal-card,
+.modal-shell-leave-to .modal-card {
+  opacity: 0;
+  transform: translateY(18px) scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
   }
 }

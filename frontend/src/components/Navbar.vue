@@ -205,18 +205,10 @@ function onPointerDown(event: PointerEvent) {
           <UserRound v-else class="h-4.5 w-4.5" />
         </button>
 
-        <transition
-          enter-active-class="transition duration-150 ease-out"
-          enter-from-class="translate-y-1 opacity-0"
-          enter-to-class="translate-y-0 opacity-100"
-          leave-active-class="transition duration-120 ease-in"
-          leave-from-class="translate-y-0 opacity-100"
-          leave-to-class="translate-y-1 opacity-0"
+        <section
+          v-if="panelOpen"
+          class="absolute right-0 top-[calc(100%+12px)] z-20 w-[320px] rounded-xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-950/[0.06] dark:border-slate-800 dark:bg-slate-950 dark:shadow-none"
         >
-          <section
-            v-if="panelOpen"
-            class="absolute right-0 top-[calc(100%+12px)] z-20 w-[320px] rounded-xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-950/[0.06] dark:border-slate-800 dark:bg-slate-950 dark:shadow-none"
-          >
             <div v-if="loginSuccess" class="flex min-h-[184px] flex-col items-center justify-center gap-3 text-center">
               <div class="flex h-12 w-12 items-center justify-center rounded-full bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900">
                 <Check class="h-5 w-5 animate-pulse" />
@@ -254,8 +246,7 @@ function onPointerDown(event: PointerEvent) {
                 {{ loginError }}
               </p>
             </template>
-          </section>
-        </transition>
+        </section>
       </div>
     </div>
   </header>

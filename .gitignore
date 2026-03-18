@@ -34,7 +34,9 @@ Thumbs.db
 /backend/tmp/
 /backend/.air/
 # Generated Frontend Assets in Backend
-/backend/web/dist/
+/backend/web/dist/*
+!/backend/web/dist/
+!/backend/web/dist/index.html
 # Local Configuration (Secrets)
 /backend/configs/config.local.json
 /backend/.env

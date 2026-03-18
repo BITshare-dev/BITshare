@@ -22,6 +22,11 @@ type batchDownloadRequest struct {
 	FileIDs []string `json:"file_ids"`
 }
 
+type resourceBatchDownloadRequest struct {
+	FileIDs   []string `json:"file_ids"`
+	FolderIDs []string `json:"folder_ids"`
+}
+
 func NewPublicDownloadHandler(service *service.PublicDownloadService) *PublicDownloadHandler {
 	return &PublicDownloadHandler{service: service}
 }
@@ -165,6 +170,66 @@ func (h *PublicDownloadHandler) DownloadBatch(ctx *gin.Context) {
 		}
 
 		entryName := uniqueZipEntryName(item.OriginalName, usedNames)
+		entry, createErr := zipWriter.Create(entryName)
+		if createErr != nil {
+			opened.Content.Close()
+			zipWriter.Close()
+			return
+		}
+		if _, copyErr := io.Copy(entry, opened.Content); copyErr != nil {
+			opened.Content.Close()
+			zipWriter.Close()
+			return
+		}
+		opened.Content.Close()
+	}
+	_ = zipWriter.Close()
+}
+
+func (h *PublicDownloadHandler) DownloadResourceBatch(ctx *gin.Context) {
+	var req resourceBatchDownloadRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	files, err := h.service.PrepareResourceBatchDownload(ctx.Request.Context(), req.FileIDs, req.FolderIDs)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrBatchDownloadInvalid):
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "file_ids or folder_ids is required"})
+		case errors.Is(err, service.ErrDownloadFileNotFound), errors.Is(err, service.ErrDownloadFolderNotFound):
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "one or more resources were not found"})
+		case errors.Is(err, service.ErrDownloadFileUnavailable):
+			ctx.JSON(http.StatusGone, gin.H{"error": "one or more files are unavailable"})
+		default:
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to prepare batch download"})
+		}
+		return
+	}
+
+	fileIDs := make([]string, 0, len(files))
+	for _, item := range files {
+		fileIDs = append(fileIDs, item.FileID)
+	}
+	if err := h.service.RecordBatchDownload(ctx.Request.Context(), fileIDs); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to record download"})
+		return
+	}
+
+	ctx.Header("Content-Type", "application/zip")
+	ctx.Header("Content-Disposition", `attachment; filename="openshare-selection.zip"`)
+	zipWriter := zip.NewWriter(ctx.Writer)
+	usedNames := make(map[string]int, len(files))
+
+	for _, item := range files {
+		opened, openErr := h.service.PrepareDownload(ctx.Request.Context(), item.FileID)
+		if openErr != nil {
+			zipWriter.Close()
+			return
+		}
+
+		entryName := uniqueZipEntryName(item.ZipPath, usedNames)
 		entry, createErr := zipWriter.Create(entryName)
 		if createErr != nil {
 			opened.Content.Close()

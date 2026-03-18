@@ -273,9 +273,10 @@ function pinLabel(item: AnnouncementItem) {
   </section>
 
   <Teleport to="body">
+    <Transition name="modal-shell">
     <div v-if="editorOpen" class="fixed inset-0 z-[120] overflow-y-auto bg-slate-950/30 px-4 py-6">
       <div class="mx-auto w-full max-w-5xl">
-        <SurfaceCard class="space-y-6">
+        <SurfaceCard class="modal-card space-y-6">
           <div class="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
             <div>
               <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Announcement Editor</p>
@@ -364,11 +365,13 @@ function pinLabel(item: AnnouncementItem) {
         </SurfaceCard>
       </div>
     </div>
+    </Transition>
   </Teleport>
 
   <Teleport to="body">
+    <Transition name="modal-shell">
     <div v-if="deleteTarget" class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/30 px-4">
-      <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+      <div class="modal-card w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
         <h3 class="text-lg font-semibold text-slate-900">确认删除公告</h3>
         <p class="mt-2 text-sm leading-6 text-slate-500">
           删除后首页将不再展示这条公告。确认删除
@@ -387,5 +390,6 @@ function pinLabel(item: AnnouncementItem) {
         </div>
       </div>
     </div>
+    </Transition>
   </Teleport>
 </template>

@@ -162,6 +162,7 @@ const loading = ref(false);
 const error = ref("");
 const actionMessage = ref("");
 const actionError = ref("");
+const batchDownloadSubmitting = ref(false);
 const folders = ref<PublicFolderItem[]>([]);
 const files = ref<PublicFileItem[]>([]);
 const searchKeyword = ref("");
@@ -170,6 +171,7 @@ const searchError = ref("");
 const searchRows = ref<DirectoryRow[]>([]);
 const breadcrumbs = ref<Array<{ id: string; name: string }>>([]);
 const currentFolderDetail = ref<FolderDetailResponse | null>(null);
+const selectedResourceKeys = ref<string[]>([]);
 const canManageResourceDescriptions = ref(false);
 const folderDescriptionEditorOpen = ref(false);
 const folderNameDraft = ref("");
@@ -247,6 +249,9 @@ const sortedRows = computed(() => {
   next.sort((left, right) => compareRows(left, right, sortMode.value));
   return next;
 });
+const selectedRows = computed(() => sortedRows.value.filter((row) => selectedResourceKeys.value.includes(selectionKey(row))));
+const hasSelectedRows = computed(() => selectedRows.value.length > 0);
+const allVisibleRowsSelected = computed(() => sortedRows.value.length > 0 && selectedRows.value.length === sortedRows.value.length);
 const currentFolderDescriptionHTML = computed(() => renderSimpleMarkdown(currentFolderDetail.value?.description ?? ""));
 const folderEditorDirty = computed(() => {
   if (!currentFolderDetail.value) {
@@ -292,6 +297,95 @@ function downloadResource(row: DirectoryRow) {
   applyDownloadCountUpdate(row);
   if (row.kind === "folder") {
     void loadHotDownloads();
+  }
+}
+
+function selectionKey(row: DirectoryRow) {
+  return `${row.kind}:${row.id}`;
+}
+
+function isRowSelected(row: DirectoryRow) {
+  return selectedResourceKeys.value.includes(selectionKey(row));
+}
+
+function toggleRowSelection(row: DirectoryRow) {
+  const key = selectionKey(row);
+  if (selectedResourceKeys.value.includes(key)) {
+    selectedResourceKeys.value = selectedResourceKeys.value.filter((item) => item !== key);
+    return;
+  }
+  selectedResourceKeys.value = [...selectedResourceKeys.value, key];
+}
+
+function clearSelection() {
+  selectedResourceKeys.value = [];
+}
+
+function selectAllVisibleRows() {
+  selectedResourceKeys.value = sortedRows.value.map((row) => selectionKey(row));
+}
+
+function toggleSelectAllVisibleRows() {
+  if (allVisibleRowsSelected.value) {
+    clearSelection();
+    return;
+  }
+  selectAllVisibleRows();
+}
+
+async function downloadSelectedResources() {
+  if (!hasSelectedRows.value || batchDownloadSubmitting.value) {
+    return;
+  }
+
+  actionMessage.value = "";
+  actionError.value = "";
+  if (!allowDownloadRequest()) {
+    showTransientWarning("下载请求过于频繁，请稍后再试。");
+    return;
+  }
+
+  const fileIDs = selectedRows.value.filter((row) => row.kind === "file").map((row) => row.id);
+  const folderIDs = selectedRows.value.filter((row) => row.kind === "folder").map((row) => row.id);
+
+  batchDownloadSubmitting.value = true;
+  try {
+    const response = await fetch("/api/public/resources/batch-download", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/zip",
+      },
+      body: JSON.stringify({
+        file_ids: fileIDs,
+        folder_ids: folderIDs,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("batch download failed");
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "openshare-selection.zip";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+
+    for (const row of selectedRows.value) {
+      applyDownloadCountUpdate(row);
+    }
+    await loadHotDownloads();
+    clearSelection();
+  } catch (err: unknown) {
+    actionError.value = readApiError(err, "批量下载失败。");
+  } finally {
+    batchDownloadSubmitting.value = false;
   }
 }
 
@@ -660,6 +754,7 @@ function clearSearchState() {
   searchLoading.value = false;
   searchError.value = "";
   searchRows.value = [];
+  clearSelection();
 }
 
 function openUpload() {
@@ -859,6 +954,11 @@ function setViewMode(mode: "cards" | "table") {
   viewMenuOpen.value = false;
   window.localStorage.setItem("public-home-view-mode", mode);
 }
+
+watch(sortedRows, (rows) => {
+  const allowedKeys = new Set(rows.map((row) => selectionKey(row)));
+  selectedResourceKeys.value = selectedResourceKeys.value.filter((key) => allowedKeys.has(key));
+}, { immediate: true });
 
 function setSortMode(mode: "name" | "download" | "format") {
   sortMode.value = mode;
@@ -1174,6 +1274,15 @@ async function syncSessionReceiptCode() {
                 在该目录上传
               </button>
 
+              <button
+                v-if="sortedRows.length > 0"
+                type="button"
+                class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                @click="toggleSelectAllVisibleRows"
+              >
+                {{ allVisibleRowsSelected ? "取消全选" : "全选" }}
+              </button>
+
               <div class="ml-auto flex flex-wrap items-center gap-3">
               <div class="relative">
                 <button
@@ -1260,15 +1369,24 @@ async function syncSessionReceiptCode() {
             <article
               v-for="row in sortedRows"
               :key="`${row.kind}-${row.id}`"
-              class="group flex h-[168px] cursor-pointer flex-col rounded-3xl border border-slate-200 bg-white px-5 pt-3.5 transition hover:border-slate-300 hover:shadow-sm"
+              class="group relative flex h-[168px] cursor-pointer flex-col rounded-3xl border border-slate-200 bg-white px-5 pt-3.5 transition hover:border-slate-300 hover:shadow-sm"
               @click="row.kind === 'folder' ? openFolder(row.id) : openFile(row.id)"
             >
+              <div class="absolute right-5 top-4 z-10">
+                <input
+                  :checked="isRowSelected(row)"
+                  type="checkbox"
+                  class="h-5 w-5 rounded-lg border-slate-300 text-slate-900 focus:ring-slate-300"
+                  @click.stop
+                  @change="toggleRowSelection(row)"
+                />
+              </div>
               <div class="flex items-start gap-4">
                 <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
                   <Folder v-if="row.kind === 'folder'" class="h-7 w-7 text-blue-500" />
                   <component v-else :is="fileIconComponent(row.extension)" class="h-7 w-7" />
                 </div>
-                <div class="min-w-0 flex-1 pt-0.5">
+                <div class="min-w-0 flex-1 pr-10 pt-0.5">
                   <h3 class="truncate text-base font-semibold leading-6 text-slate-900">{{ row.name }}</h3>
                   <p v-if="row.kind === 'file' && row.description" class="mt-1 line-clamp-1 text-sm leading-5 text-slate-500">
                     {{ row.description }}
@@ -1321,6 +1439,7 @@ async function syncSessionReceiptCode() {
             <table class="data-table">
               <thead>
                 <tr>
+                  <th class="w-10"></th>
                   <th>名称</th>
                   <th class="text-right">大小</th>
                   <th class="text-right">修改时间</th>
@@ -1333,6 +1452,14 @@ async function syncSessionReceiptCode() {
                   class="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-800/40"
                   @click="row.kind === 'folder' ? openFolder(row.id) : openFile(row.id)"
                 >
+                  <td @click.stop>
+                    <input
+                      :checked="isRowSelected(row)"
+                      type="checkbox"
+                      class="h-5 w-5 rounded-lg border-slate-300 text-slate-900 focus:ring-slate-300"
+                      @change="toggleRowSelection(row)"
+                    />
+                  </td>
                   <td>
                     <div
                       v-if="row.kind === 'folder'"
@@ -1374,14 +1501,6 @@ async function syncSessionReceiptCode() {
                 </div>
                 <div class="flex shrink-0 items-start gap-3">
                   <button
-                    type="button"
-                    class="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
-                    aria-label="反馈文件夹"
-                    @click="openFeedbackModal({ id: currentFolderDetail.id, type: 'folder', name: currentFolderDetail.name })"
-                  >
-                    <Flag class="h-4 w-4" />
-                  </button>
-                  <button
                     v-if="canManageResourceDescriptions"
                     type="button"
                     class="btn-secondary"
@@ -1396,6 +1515,14 @@ async function syncSessionReceiptCode() {
                     @click="openDeleteFolderDialog"
                   >
                     删除
+                  </button>
+                  <button
+                    type="button"
+                    class="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
+                    aria-label="反馈文件夹"
+                    @click="openFeedbackModal({ id: currentFolderDetail.id, type: 'folder', name: currentFolderDetail.name })"
+                  >
+                    <Flag class="h-4 w-4" />
                   </button>
                   <button
                     type="button"
@@ -1418,14 +1545,44 @@ async function syncSessionReceiptCode() {
               </div>
             </section>
           </div>
+
         </div>
       </section>
     </div>
   </main>
 
   <Teleport to="body">
+    <Transition
+      enter-active-class="transition duration-300 ease-out"
+      enter-from-class="translate-y-6 opacity-0"
+      enter-to-class="translate-y-0 opacity-100"
+      leave-active-class="transition duration-200 ease-in"
+      leave-from-class="translate-y-0 opacity-100"
+      leave-to-class="translate-y-4 opacity-0"
+    >
+      <div
+        v-if="hasSelectedRows"
+        class="pointer-events-none fixed inset-x-0 bottom-6 z-[130] flex justify-center px-4"
+      >
+        <div class="pointer-events-auto flex w-full max-w-3xl items-center justify-between gap-4 rounded-3xl border border-slate-200 bg-white px-6 py-4 shadow-[0_0_0_1px_rgba(15,23,42,0.06),0_22px_60px_-18px_rgba(15,23,42,0.34)]">
+          <p class="text-sm text-slate-600">
+            已选 <span class="font-semibold text-slate-900">{{ selectedRows.length }}</span> 项
+          </p>
+          <div class="flex items-center gap-3">
+            <button type="button" class="btn-secondary" @click="clearSelection">取消选择</button>
+            <button type="button" class="btn-primary" :disabled="batchDownloadSubmitting" @click="downloadSelectedResources">
+              {{ batchDownloadSubmitting ? "打包中…" : "批量下载" }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <Teleport to="body">
+    <Transition name="modal-shell">
     <div v-if="sidebarDetailModal" class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/30 px-4">
-      <div class="panel w-full max-w-3xl p-6">
+      <div class="modal-card panel w-full max-w-3xl p-6">
         <div class="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">{{ sidebarDetailModal.eyebrow }}</p>
@@ -1458,11 +1615,13 @@ async function syncSessionReceiptCode() {
         </div>
       </div>
     </div>
+    </Transition>
   </Teleport>
 
   <Teleport to="body">
+    <Transition name="modal-shell">
     <div v-if="announcementListOpen" class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/30 px-4">
-      <div class="panel w-full max-w-3xl p-6">
+      <div class="modal-card panel w-full max-w-3xl p-6">
         <div class="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
           <div class="min-w-0">
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Announcements</p>
@@ -1513,11 +1672,13 @@ async function syncSessionReceiptCode() {
         </div>
       </div>
     </div>
+    </Transition>
   </Teleport>
 
   <Teleport to="body">
+    <Transition name="modal-shell">
     <div v-if="announcementDetail" class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/30 px-4">
-      <div class="panel w-full max-w-2xl p-6">
+      <div class="modal-card panel w-full max-w-2xl p-6">
         <div class="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
           <div class="min-w-0">
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Announcement</p>
@@ -1549,11 +1710,13 @@ async function syncSessionReceiptCode() {
         </div>
       </div>
     </div>
+    </Transition>
   </Teleport>
 
   <Teleport to="body">
+    <Transition name="modal-shell">
     <div v-if="deleteResourceTarget" class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/30 px-4">
-      <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+      <div class="modal-card w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
         <div>
           <h3 class="text-lg font-semibold text-slate-900">确认删除文件夹</h3>
           <p class="mt-2 text-sm leading-6 text-slate-500">
@@ -1581,12 +1744,14 @@ async function syncSessionReceiptCode() {
         </div>
       </div>
     </div>
+    </Transition>
   </Teleport>
 
   <Teleport to="body">
+    <Transition name="modal-shell">
     <div v-if="uploadModalOpen" class="fixed inset-0 z-[120] overflow-y-auto bg-slate-950/40 backdrop-blur-sm">
       <div class="flex min-h-screen items-start justify-center px-4 py-6">
-        <div class="panel w-full max-w-2xl overflow-hidden">
+        <div class="modal-card panel w-full max-w-2xl overflow-hidden">
           <div class="max-h-[calc(100vh-3rem)] overflow-y-auto p-6">
             <div class="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
               <div>
@@ -1689,12 +1854,14 @@ async function syncSessionReceiptCode() {
         </div>
       </div>
     </div>
+    </Transition>
   </Teleport>
 
   <Teleport to="body">
+    <Transition name="modal-shell">
     <div v-if="feedbackModalOpen" class="fixed inset-0 z-[120] bg-slate-950/40 backdrop-blur-sm">
       <div class="flex min-h-screen items-center justify-center px-4 py-6">
-        <div class="panel w-full max-w-2xl overflow-hidden p-6">
+        <div class="modal-card panel w-full max-w-2xl overflow-hidden p-6">
           <div class="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
             <div>
               <h3 class="text-lg font-semibold text-slate-900">反馈中心</h3>
@@ -1739,12 +1906,14 @@ async function syncSessionReceiptCode() {
         </div>
       </div>
     </div>
+    </Transition>
   </Teleport>
 
   <Teleport to="body">
+    <Transition name="modal-shell">
     <div v-if="folderDescriptionEditorOpen" class="fixed inset-0 z-[120] bg-slate-950/40 backdrop-blur-sm">
       <div class="flex min-h-screen items-center justify-center px-4 py-6">
-          <div class="panel w-full max-w-3xl overflow-hidden p-6">
+          <div class="modal-card panel w-full max-w-3xl overflow-hidden p-6">
             <div class="border-b border-slate-200 pb-4">
               <div>
                 <h3 class="text-lg font-semibold text-slate-900">编辑文件夹信息</h3>
@@ -1784,6 +1953,7 @@ async function syncSessionReceiptCode() {
         </div>
       </div>
     </div>
+    </Transition>
   </Teleport>
 </template>
 

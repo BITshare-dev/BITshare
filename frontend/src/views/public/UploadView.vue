@@ -23,12 +23,8 @@ interface FeedbackLookupResponse {
   receipt_code: string;
   items: Array<{
     target_name: string;
-    target_type: string;
-    reason: string;
-    reason_label: string;
     description: string;
     status: string;
-    review_reason: string;
     created_at: string;
     reviewed_at: string | null;
   }>;
@@ -116,6 +112,16 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+function submissionDisplayName(item: SubmissionLookupResponse["items"][number]) {
+  const relativePath = item.relative_path?.trim();
+  if (!relativePath) {
+    return item.title;
+  }
+
+  const segments = relativePath.split("/").filter(Boolean);
+  return segments[segments.length - 1] || item.title;
+}
+
 function submissionStatusLabel(status: string) {
   const labels: Record<string, string> = {
     pending: "待审核",
@@ -134,9 +140,6 @@ function feedbackStatusLabel(status: string) {
   return labels[status] ?? status;
 }
 
-function feedbackReasonLabel(item: FeedbackLookupResponse["items"][number]) {
-  return item.reason_label || item.reason || "-";
-}
 </script>
 
 <template>
@@ -176,50 +179,56 @@ function feedbackReasonLabel(item: FeedbackLookupResponse["items"][number]) {
         <p v-else-if="lookupLoading" class="mt-4 text-sm text-slate-500">正在查询…</p>
 
         <div v-if="submissionLookupResult" class="mt-6 space-y-3">
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            当前类型：<span class="font-medium text-slate-900">上传记录</span>
-          </div>
           <article
             v-for="item in submissionLookupResult.items"
             :key="`${item.title}-${item.uploaded_at}`"
-            class="rounded-xl border border-slate-200 p-4"
+            class="rounded-xl border border-slate-200 bg-white px-5 py-5"
           >
-            <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="space-y-4">
               <div>
-                <h3 class="text-sm font-semibold text-slate-900">{{ item.title }}</h3>
-                <p class="mt-1 text-sm text-slate-500">{{ formatDate(item.uploaded_at) }}</p>
-                <p v-if="item.relative_path" class="mt-1 text-sm text-slate-500">目录结构：{{ item.relative_path }}</p>
+                <span class="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                  {{ submissionStatusLabel(item.status) }}
+                </span>
+                <p class="mt-3 text-sm text-slate-500">
+                  当前类型：<span class="font-medium text-slate-900">上传记录</span>
+                </p>
               </div>
-              <span class="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                {{ submissionStatusLabel(item.status) }}
-              </span>
-            </div>
-            <div class="mt-3 flex flex-wrap gap-4 text-sm text-slate-500">
-              <span>下载 {{ item.download_count }}</span>
-              <span v-if="item.reject_reason">驳回原因：{{ item.reject_reason }}</span>
+              <div class="space-y-3 text-sm text-slate-500">
+                <p class="text-xl font-semibold tracking-tight text-slate-900">{{ submissionDisplayName(item) }}</p>
+                <p><span class="font-medium text-slate-900">提交时间：</span>{{ formatDate(item.uploaded_at) }}</p>
+                <p v-if="item.relative_path" class="break-all">
+                  <span class="font-medium text-slate-900">文件位置：</span>{{ item.relative_path }}
+                </p>
+              </div>
+              <div class="space-y-3 text-sm text-slate-500">
+                <p><span class="font-medium text-slate-900">下载：</span>{{ item.download_count }}</p>
+                <p v-if="item.reject_reason"><span class="font-medium text-slate-900">驳回原因：</span>{{ item.reject_reason }}</p>
+              </div>
             </div>
           </article>
         </div>
 
         <div v-if="feedbackLookupResult" class="mt-6 space-y-3">
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            当前类型：<span class="font-medium text-slate-900">反馈记录</span>
-          </div>
           <article
             v-for="item in feedbackLookupResult.items"
-            :key="`${item.target_type}-${item.target_name}-${item.created_at}`"
-            class="rounded-xl border border-slate-200 p-4 text-sm text-slate-600"
+            :key="`${item.target_name}-${item.created_at}`"
+            class="rounded-xl border border-slate-200 bg-white px-5 py-5 text-sm text-slate-600"
           >
-            <div class="grid gap-3">
-              <p><span class="font-medium text-slate-900">回执码：</span>{{ feedbackLookupResult.receipt_code }}</p>
-              <p><span class="font-medium text-slate-900">目标：</span>{{ item.target_name || "-" }}</p>
-              <p><span class="font-medium text-slate-900">类型：</span>{{ item.target_type === "folder" ? "文件夹" : "文件" }}</p>
-              <p><span class="font-medium text-slate-900">原因：</span>{{ feedbackReasonLabel(item) }}</p>
-              <p><span class="font-medium text-slate-900">状态：</span>{{ feedbackStatusLabel(item.status) }}</p>
-              <p><span class="font-medium text-slate-900">提交时间：</span>{{ formatDate(item.created_at) }}</p>
-              <p v-if="item.description"><span class="font-medium text-slate-900">说明：</span>{{ item.description }}</p>
-              <p v-if="item.reviewed_at"><span class="font-medium text-slate-900">处理时间：</span>{{ formatDate(item.reviewed_at) }}</p>
-              <p v-if="item.review_reason"><span class="font-medium text-slate-900">{{ item.status === 'rejected' ? '驳回说明：' : '处理意见：' }}</span>{{ item.review_reason }}</p>
+            <div class="space-y-4">
+              <div>
+                <span class="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                  {{ feedbackStatusLabel(item.status) }}
+                </span>
+                <p class="mt-3 text-sm text-slate-500">
+                  当前类型：<span class="font-medium text-slate-900">反馈记录</span>
+                </p>
+              </div>
+              <div class="space-y-3 text-sm text-slate-500">
+                <p><span class="font-medium text-slate-900">目标：</span>{{ item.target_name || "-" }}</p>
+                <p><span class="font-medium text-slate-900">提交时间：</span>{{ formatDate(item.created_at) }}</p>
+                <p v-if="item.description"><span class="font-medium text-slate-900">说明：</span>{{ item.description }}</p>
+                <p v-if="item.reviewed_at"><span class="font-medium text-slate-900">处理时间：</span>{{ formatDate(item.reviewed_at) }}</p>
+              </div>
             </div>
           </article>
         </div>

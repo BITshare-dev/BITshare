@@ -48,16 +48,34 @@ ensure_port_available() {
 }
 
 prepare_frontend_dependencies() {
-  if [[ -x "$FRONTEND_DIR/node_modules/.bin/vite" ]]; then
+  if [[ -x "$FRONTEND_DIR/node_modules/.bin/vite" ]] && frontend_tooling_healthy; then
     echo "前端依赖已存在，跳过安装。"
     return
   fi
 
-  echo "前端依赖缺失，正在执行 npm install ..."
+  echo "前端依赖缺失或损坏，正在执行 npm install ..."
   (
     cd "$FRONTEND_DIR"
     npm install
   )
+
+  if frontend_tooling_healthy; then
+    return
+  fi
+
+  echo "前端依赖仍不完整，正在清理 node_modules 后重装 ..."
+  rm -rf "$FRONTEND_DIR/node_modules"
+  (
+    cd "$FRONTEND_DIR"
+    npm install
+  )
+}
+
+frontend_tooling_healthy() {
+  (
+    cd "$FRONTEND_DIR"
+    node -e "require('vite'); require('rollup');"
+  ) >/dev/null 2>&1
 }
 
 wait_for_http() {

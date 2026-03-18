@@ -17,6 +17,7 @@ func registerPublicRoutes(api *gin.RouterGroup, handlers *routeHandlers) {
 	public := api.Group("/public")
 	public.GET("/files", handlers.publicCatalog.ListPublicFiles)
 	public.POST("/files/batch-download", handlers.publicDownload.DownloadBatch)
+	public.POST("/resources/batch-download", handlers.publicDownload.DownloadResourceBatch)
 	public.GET("/files/:fileID", handlers.publicDownload.GetFileDetail)
 	public.PUT("/files/:fileID", handlers.resourceManagement.PublicUpdateFile)
 	public.DELETE("/files/:fileID", handlers.resourceManagement.PublicDeleteFile)

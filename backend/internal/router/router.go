@@ -9,6 +9,7 @@ import (
 	"openshare/backend/internal/config"
 	"openshare/backend/internal/middleware"
 	"openshare/backend/internal/session"
+	webui "openshare/backend/web"
 )
 
 func New(db *gorm.DB, cfg config.Config, sessionManager *session.Manager) *gin.Engine {
@@ -41,6 +42,7 @@ func New(db *gorm.DB, cfg config.Config, sessionManager *session.Manager) *gin.E
 	api := engine.Group("/api")
 	registerPublicRoutes(api, handlers)
 	registerAdminRoutes(api, handlers)
+	webui.Register(engine)
 
 	return engine
 }
