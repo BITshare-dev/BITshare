@@ -81,9 +81,7 @@ type PublicReportLookupResult struct {
 
 type PublicReportLookupItem struct {
 	TargetName   string             `json:"target_name"`
-	TargetType   string             `json:"target_type"`
-	Reason       string             `json:"reason"`
-	ReasonLabel  string             `json:"reason_label"`
+	TargetPath   string             `json:"target_path"`
 	Description  string             `json:"description"`
 	Status       model.ReportStatus `json:"status"`
 	ReviewReason string             `json:"review_reason"`
@@ -138,6 +136,7 @@ func (s *ReportService) CreateReport(ctx context.Context, input CreateReportInpu
 
 	// Verify the target resource exists and is active.
 	targetName := ""
+	targetPath := ""
 	targetType := ""
 	if hasFile {
 		exists, err := s.repo.FileExists(ctx, input.FileID)
@@ -166,8 +165,14 @@ func (s *ReportService) CreateReport(ctx context.Context, input CreateReportInpu
 
 	if hasFile {
 		targetName, err = s.repo.FindFileTitleByID(ctx, strings.TrimSpace(input.FileID))
+		if err == nil {
+			targetPath, err = s.repo.FindFilePathByID(ctx, strings.TrimSpace(input.FileID))
+		}
 	} else {
 		targetName, err = s.repo.FindFolderNameByID(ctx, strings.TrimSpace(input.FolderID))
+		if err == nil {
+			targetPath, err = s.repo.FindFolderPathByID(ctx, strings.TrimSpace(input.FolderID))
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("load report target snapshot: %w", err)
@@ -183,6 +188,7 @@ func (s *ReportService) CreateReport(ctx context.Context, input CreateReportInpu
 		ID:          reportID,
 		ReceiptCode: receiptCode,
 		TargetName:  targetName,
+		TargetPath:  targetPath,
 		TargetType:  targetType,
 		Reason:      reason,
 		Description: description,
@@ -226,12 +232,9 @@ func (s *ReportService) LookupPublicReport(ctx context.Context, receiptCode stri
 
 	items := make([]PublicReportLookupItem, 0, len(reports))
 	for _, report := range reports {
-		label, _ := validReportReasons[report.Reason]
 		items = append(items, PublicReportLookupItem{
 			TargetName:   report.TargetName,
-			TargetType:   report.TargetType,
-			Reason:       report.Reason,
-			ReasonLabel:  label,
+			TargetPath:   report.TargetPath,
 			Description:  report.Description,
 			Status:       report.Status,
 			ReviewReason: report.ReviewReason,
@@ -294,8 +297,7 @@ func (s *ReportService) ApproveReport(ctx context.Context, reportID, adminID, op
 	}
 
 	reviewedAt := s.nowFunc()
-	logDetail := fmt.Sprintf("反馈原因=%s，处理说明=%s", report.Reason, strings.TrimSpace(reviewReason))
-	if err := s.repo.ApproveReport(ctx, report.ID, adminID, operatorIP, reviewedAt, logDetail); err != nil {
+	if err := s.repo.ApproveReport(ctx, report.ID, adminID, operatorIP, reviewedAt, strings.TrimSpace(reviewReason)); err != nil {
 		return nil, fmt.Errorf("approve report: %w", err)
 	}
 
@@ -323,8 +325,7 @@ func (s *ReportService) RejectReport(ctx context.Context, reportID, adminID, ope
 	}
 
 	reviewedAt := s.nowFunc()
-	logDetail := fmt.Sprintf("反馈原因=%s，驳回说明=%s", report.Reason, strings.TrimSpace(reviewReason))
-	if err := s.repo.RejectReport(ctx, report.ID, adminID, operatorIP, reviewedAt, logDetail); err != nil {
+	if err := s.repo.RejectReport(ctx, report.ID, adminID, operatorIP, reviewedAt, strings.TrimSpace(reviewReason)); err != nil {
 		return nil, fmt.Errorf("reject report: %w", err)
 	}
 

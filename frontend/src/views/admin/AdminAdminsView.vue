@@ -65,6 +65,8 @@ const form = reactive({
 const creating = ref(false);
 const createdCredentials = ref<CreatedAdminResponse | null>(null);
 const deletingAdmin = ref<AdminItem | null>(null);
+const deletePassword = ref("");
+const deleteSubmitting = ref(false);
 const resettingAdmin = ref<AdminItem | null>(null);
 const statusConfirmAdmin = ref<AdminItem | null>(null);
 const resetPasswordForm = reactive({
@@ -188,19 +190,33 @@ async function confirmResetPassword() {
 
 async function deleteAdmin(item: AdminItem) {
   deletingAdmin.value = item;
+  deletePassword.value = "";
 }
 
 async function confirmDeleteAdmin() {
   if (!deletingAdmin.value) return;
   error.value = "";
   message.value = "";
+  if (!deletePassword.value.trim()) {
+    error.value = "请输入当前超管密码。";
+    return;
+  }
+  deleteSubmitting.value = true;
   try {
-    await httpClient.request(`/admin/admins/${deletingAdmin.value.id}`, { method: "DELETE" });
+    await httpClient.request(`/admin/admins/${deletingAdmin.value.id}`, {
+      method: "DELETE",
+      body: {
+        password: deletePassword.value,
+      },
+    });
     message.value = `管理员 ${deletingAdmin.value.display_name} 已删除。`;
     deletingAdmin.value = null;
+    deletePassword.value = "";
     await loadItems();
   } catch (err: unknown) {
     error.value = readApiError(err, "删除管理员失败。");
+  } finally {
+    deleteSubmitting.value = false;
   }
 }
 
@@ -250,6 +266,8 @@ function closeCreatedModal() {
 
 function closeDeleteModal() {
   deletingAdmin.value = null;
+  deletePassword.value = "";
+  deleteSubmitting.value = false;
 }
 
 function closeResetPasswordModal() {
@@ -329,7 +347,7 @@ function formatDate(value: string) {
           <article v-for="item in visibleItems" :key="item.id" class="rounded-xl border border-slate-200 p-4">
             <div class="flex flex-wrap items-start justify-between gap-4">
               <div class="flex min-w-0 items-start gap-3">
-                <div class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-100 text-base font-semibold text-slate-700">
+                <div class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-base font-semibold text-slate-700">
                   <img v-if="item.avatar_url" :src="item.avatar_url" alt="管理员头像" class="h-full w-full object-cover" />
                   <span v-else>{{ item.display_name.slice(0, 1).toUpperCase() || "A" }}</span>
                 </div>
@@ -384,106 +402,116 @@ function formatDate(value: string) {
     <p v-if="message" class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ message }}</p>
     <p v-if="error" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ error }}</p>
 
-    <Transition name="modal-shell">
-    <div v-if="createdCredentials" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4">
-      <div class="modal-card w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-        <div>
+    <Teleport to="body">
+      <Transition name="modal-shell">
+      <div v-if="createdCredentials" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4">
+        <div class="modal-card w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
           <div>
-            <h3 class="text-lg font-semibold text-slate-900">管理员已创建</h3>
-            <p class="mt-1 text-sm text-slate-500">请保存下面的初始登录信息。窗口关闭后不会再次显示。</p>
+            <div>
+              <h3 class="text-lg font-semibold text-slate-900">管理员已创建</h3>
+              <p class="mt-1 text-sm text-slate-500">请保存下面的初始登录信息。窗口关闭后不会再次显示。</p>
+            </div>
           </div>
-        </div>
 
-        <div class="mt-6 space-y-4">
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p class="text-xs font-medium uppercase tracking-wide text-slate-400">标示ID</p>
-            <p class="mt-1 text-base font-semibold text-slate-900">{{ createdCredentials.login_id }}</p>
+          <div class="mt-6 space-y-4">
+            <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p class="text-xs font-medium uppercase tracking-wide text-slate-400">标示ID</p>
+              <p class="mt-1 text-base font-semibold text-slate-900">{{ createdCredentials.login_id }}</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p class="text-xs font-medium uppercase tracking-wide text-slate-400">用户名</p>
+              <p class="mt-1 text-base font-semibold text-slate-900">{{ createdCredentials.display_name }}</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p class="text-xs font-medium uppercase tracking-wide text-slate-400">初始密码</p>
+              <p class="mt-1 text-base font-semibold text-slate-900">{{ createdCredentials.password }}</p>
+            </div>
           </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p class="text-xs font-medium uppercase tracking-wide text-slate-400">用户名</p>
-            <p class="mt-1 text-base font-semibold text-slate-900">{{ createdCredentials.display_name }}</p>
-          </div>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p class="text-xs font-medium uppercase tracking-wide text-slate-400">初始密码</p>
-            <p class="mt-1 text-base font-semibold text-slate-900">{{ createdCredentials.password }}</p>
-          </div>
-        </div>
 
-        <div class="mt-6 flex justify-end">
-          <button type="button" class="btn-primary" @click="closeCreatedModal">关闭</button>
+          <div class="mt-6 flex justify-end">
+            <button type="button" class="btn-primary" @click="closeCreatedModal">关闭</button>
+          </div>
         </div>
       </div>
-    </div>
-    </Transition>
+      </Transition>
 
-    <Transition name="modal-shell">
-    <div v-if="deletingAdmin" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4">
-      <div class="modal-card w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-        <div>
-          <h3 class="text-lg font-semibold text-slate-900">确认删除管理员</h3>
-          <p class="mt-2 text-sm leading-6 text-slate-500">
-            删除后将清除该管理员账号及其会话，无法恢复。确认删除
-            <span class="font-medium text-slate-900">{{ deletingAdmin.display_name }}</span>
-            吗？
-          </p>
-        </div>
-        <div class="mt-6 flex justify-end gap-3">
-          <button type="button" class="btn-secondary" @click="closeDeleteModal">取消</button>
-          <button type="button" class="inline-flex h-11 items-center rounded-xl bg-rose-600 px-5 text-sm font-medium text-white transition hover:bg-rose-700" @click="confirmDeleteAdmin">
-            确认删除
-          </button>
-        </div>
-      </div>
-    </div>
-    </Transition>
-
-    <Transition name="modal-shell">
-    <div v-if="resettingAdmin" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4">
-      <div class="modal-card w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-        <div>
-          <h3 class="text-lg font-semibold text-slate-900">重置密码</h3>
-          <p class="mt-2 text-sm leading-6 text-slate-500">
-            为 <span class="font-medium text-slate-900">{{ resettingAdmin.display_name }}</span> 设置新的登录密码。
-          </p>
-        </div>
-        <div class="mt-6 space-y-4">
-          <div class="space-y-2">
-            <label class="text-sm font-medium text-slate-700">新密码</label>
-            <input v-model="resetPasswordForm.password" type="password" class="field" placeholder="至少 8 位" />
+      <Transition name="modal-shell">
+      <div v-if="deletingAdmin" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4">
+        <div class="modal-card w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+          <div>
+            <h3 class="text-lg font-semibold text-slate-900">确认删除管理员</h3>
+            <p class="mt-2 text-sm leading-6 text-slate-500">
+              删除后将清除该管理员账号及其会话，无法恢复。确认删除
+              <span class="font-medium text-slate-900">{{ deletingAdmin.display_name }}</span>
+              吗？
+            </p>
           </div>
-          <div class="space-y-2">
-            <label class="text-sm font-medium text-slate-700">确认新密码</label>
-            <input v-model="resetPasswordForm.confirmPassword" type="password" class="field" placeholder="再次输入新密码" />
+          <div class="mt-6">
+            <input v-model="deletePassword" type="password" class="field" placeholder="请输入密码以删除该账号" />
+          </div>
+          <div class="mt-6 flex justify-end gap-3">
+            <button type="button" class="btn-secondary" @click="closeDeleteModal">取消</button>
+            <button
+              type="button"
+              class="inline-flex h-11 items-center rounded-xl bg-rose-600 px-5 text-sm font-medium text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="deleteSubmitting"
+              @click="confirmDeleteAdmin"
+            >
+              {{ deleteSubmitting ? "删除中…" : "确认删除" }}
+            </button>
           </div>
         </div>
-        <div class="mt-6 flex justify-end gap-3">
-          <button type="button" class="btn-secondary" @click="closeResetPasswordModal">取消</button>
-          <button type="button" class="btn-primary" :disabled="resetPasswordSaving" @click="confirmResetPassword">
-            {{ resetPasswordSaving ? "处理中…" : "确认重置" }}
-          </button>
-        </div>
       </div>
-    </div>
-    </Transition>
+      </Transition>
 
-    <Transition name="modal-shell">
-    <div v-if="statusConfirmAdmin" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4">
-      <div class="modal-card w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-        <div>
-          <h3 class="text-lg font-semibold text-slate-900">{{ statusConfirmAdmin.status === "active" ? "停用账号" : "重新启用" }}</h3>
-          <p class="mt-2 text-sm leading-6 text-slate-500">
-            确认要{{ statusConfirmAdmin.status === "active" ? "停用" : "重新启用" }}
-            <span class="font-medium text-slate-900">{{ statusConfirmAdmin.display_name }}</span> 吗？
-          </p>
-        </div>
-        <div class="mt-6 flex justify-end gap-3">
-          <button type="button" class="btn-secondary" @click="closeStatusModal">取消</button>
-          <button type="button" class="btn-primary" :disabled="statusSaving" @click="confirmToggleStatus">
-            {{ statusSaving ? "处理中…" : "确认" }}
-          </button>
+      <Transition name="modal-shell">
+      <div v-if="resettingAdmin" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4">
+        <div class="modal-card w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+          <div>
+            <h3 class="text-lg font-semibold text-slate-900">重置密码</h3>
+            <p class="mt-2 text-sm leading-6 text-slate-500">
+              为 <span class="font-medium text-slate-900">{{ resettingAdmin.display_name }}</span> 设置新的登录密码。
+            </p>
+          </div>
+          <div class="mt-6 space-y-4">
+            <div class="space-y-2">
+              <label class="text-sm font-medium text-slate-700">新密码</label>
+              <input v-model="resetPasswordForm.password" type="password" class="field" placeholder="至少 8 位" />
+            </div>
+            <div class="space-y-2">
+              <label class="text-sm font-medium text-slate-700">确认新密码</label>
+              <input v-model="resetPasswordForm.confirmPassword" type="password" class="field" placeholder="再次输入新密码" />
+            </div>
+          </div>
+          <div class="mt-6 flex justify-end gap-3">
+            <button type="button" class="btn-secondary" @click="closeResetPasswordModal">取消</button>
+            <button type="button" class="btn-primary" :disabled="resetPasswordSaving" @click="confirmResetPassword">
+              {{ resetPasswordSaving ? "处理中…" : "确认重置" }}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-    </Transition>
+      </Transition>
+
+      <Transition name="modal-shell">
+      <div v-if="statusConfirmAdmin" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4">
+        <div class="modal-card w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+          <div>
+            <h3 class="text-lg font-semibold text-slate-900">{{ statusConfirmAdmin.status === "active" ? "停用账号" : "重新启用" }}</h3>
+            <p class="mt-2 text-sm leading-6 text-slate-500">
+              确认要{{ statusConfirmAdmin.status === "active" ? "停用" : "重新启用" }}
+              <span class="font-medium text-slate-900">{{ statusConfirmAdmin.display_name }}</span> 吗？
+            </p>
+          </div>
+          <div class="mt-6 flex justify-end gap-3">
+            <button type="button" class="btn-secondary" @click="closeStatusModal">取消</button>
+            <button type="button" class="btn-primary" :disabled="statusSaving" @click="confirmToggleStatus">
+              {{ statusSaving ? "处理中…" : "确认" }}
+            </button>
+          </div>
+        </div>
+      </div>
+      </Transition>
+    </Teleport>
   </section>
 </template>

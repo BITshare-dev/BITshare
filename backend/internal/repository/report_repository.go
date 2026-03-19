@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -58,13 +59,34 @@ func (r *ReportRepository) FindFileTitleByID(ctx context.Context, fileID string)
 	}
 	if err := r.db.WithContext(ctx).
 		Model(&model.File{}).
-		Select("title").
+		Select("COALESCE(NULLIF(original_name, ''), title) AS title").
 		Where("id = ?", fileID).
 		Take(&row).
 		Error; err != nil {
 		return "", err
 	}
 	return row.Title, nil
+}
+
+func (r *ReportRepository) FindFilePathByID(ctx context.Context, fileID string) (string, error) {
+	var row struct {
+		FolderID     *string `gorm:"column:folder_id"`
+		OriginalName string  `gorm:"column:original_name"`
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.File{}).
+		Select("folder_id, original_name").
+		Where("id = ?", fileID).
+		Take(&row).
+		Error; err != nil {
+		return "", err
+	}
+
+	folderPath, err := r.buildFolderPath(ctx, row.FolderID)
+	if err != nil {
+		return "", err
+	}
+	return NormalizeRelativePathForStorage(filepath.ToSlash(filepath.Join(folderPath, row.OriginalName))), nil
 }
 
 func (r *ReportRepository) FindFolderNameByID(ctx context.Context, folderID string) (string, error) {
@@ -80,6 +102,10 @@ func (r *ReportRepository) FindFolderNameByID(ctx context.Context, folderID stri
 		return "", err
 	}
 	return row.Name, nil
+}
+
+func (r *ReportRepository) FindFolderPathByID(ctx context.Context, folderID string) (string, error) {
+	return r.buildFolderPath(ctx, &folderID)
 }
 
 // ---------------------------------------------------------------------------
@@ -103,8 +129,7 @@ type PendingReportRow struct {
 type PublicReportLookupRow struct {
 	ReceiptCode  string
 	TargetName   string
-	TargetType   string
-	Reason       string
+	TargetPath   string
 	Description  string
 	Status       model.ReportStatus
 	ReviewReason string
@@ -158,8 +183,7 @@ func (r *ReportRepository) FindPublicReportsByReceiptCode(ctx context.Context, r
 		Select(`
 			reports.receipt_code AS receipt_code,
 			reports.target_name AS target_name,
-			reports.target_type AS target_type,
-			reports.reason,
+			reports.target_path AS target_path,
 			reports.description,
 			reports.status,
 			reports.review_reason,
@@ -172,6 +196,32 @@ func (r *ReportRepository) FindPublicReportsByReceiptCode(ctx context.Context, r
 		return nil, fmt.Errorf("find public reports by receipt code: %w", err)
 	}
 	return rows, nil
+}
+
+func (r *ReportRepository) buildFolderPath(ctx context.Context, folderID *string) (string, error) {
+	if folderID == nil || strings.TrimSpace(*folderID) == "" {
+		return "", nil
+	}
+
+	segments := make([]string, 0)
+	currentID := folderID
+	for currentID != nil && strings.TrimSpace(*currentID) != "" {
+		var folder model.Folder
+		if err := r.db.WithContext(ctx).
+			Model(&model.Folder{}).
+			Select("id, parent_id, name").
+			Where("id = ?", *currentID).
+			Take(&folder).Error; err != nil {
+			return "", err
+		}
+		segments = append(segments, NormalizeRelativePathForStorage(folder.Name))
+		currentID = folder.ParentID
+	}
+
+	for i, j := 0, len(segments)-1; i < j; i, j = i+1, j-1 {
+		segments[i], segments[j] = segments[j], segments[i]
+	}
+	return strings.Join(segments, "/"), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +255,9 @@ func (r *ReportRepository) ApproveReport(
 			"updated_at":    reviewedAt,
 		}).Error; err != nil {
 			return fmt.Errorf("approve report: %w", err)
+		}
+		if err := model.AdjustSystemStatsTx(tx, model.SystemStatsDelta{PendingReports: -1}); err != nil {
+			return fmt.Errorf("adjust approved report stats: %w", err)
 		}
 
 		logID, err := identity.NewID()
@@ -255,6 +308,9 @@ func (r *ReportRepository) RejectReport(
 			"updated_at":    reviewedAt,
 		}).Error; err != nil {
 			return fmt.Errorf("reject report: %w", err)
+		}
+		if err := model.AdjustSystemStatsTx(tx, model.SystemStatsDelta{PendingReports: -1}); err != nil {
+			return fmt.Errorf("adjust rejected report stats: %w", err)
 		}
 
 		logID, err := identity.NewID()

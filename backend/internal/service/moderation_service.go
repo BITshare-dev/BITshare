@@ -132,8 +132,26 @@ func (s *ModerationService) ApproveSubmission(ctx context.Context, submissionID 
 		return nil, fmt.Errorf("move staged file to folder: %w", err)
 	}
 
+	finalTitle := strings.TrimSuffix(finalName, filepath.Ext(finalName))
+	if finalTitle == "" {
+		finalTitle = finalName
+	}
+	finalRelativePath := replaceRelativePathBase(record.Submission.RelativePathSnapshot, finalName)
+
 	reviewedAt := s.nowFunc()
-	if err := s.repository.ApproveSubmission(ctx, record.Submission.ID, adminID, operatorIP, reviewedAt, targetFolder.ID, finalPath, finalName); err != nil {
+	if err := s.repository.ApproveSubmission(
+		ctx,
+		record.Submission.ID,
+		adminID,
+		operatorIP,
+		reviewedAt,
+		targetFolder.ID,
+		finalPath,
+		finalName,
+		finalName,
+		finalTitle,
+		finalRelativePath,
+	); err != nil {
 		// Rollback: move the file back to staging.
 		if _, rollbackErr := s.storage.MoveFileBackToStaging(finalPath, record.File.StoredName); rollbackErr != nil {
 			return nil, fmt.Errorf("approve submission failed (%v); rollback failed: %w", err, rollbackErr)
@@ -151,6 +169,20 @@ func (s *ModerationService) ApproveSubmission(ctx context.Context, submissionID 
 		Status:       model.SubmissionStatusApproved,
 		ReviewedAt:   reviewedAt,
 	}, nil
+}
+
+func replaceRelativePathBase(path string, fileName string) string {
+	path = repository.NormalizeRelativePathForStorage(path)
+	fileName = repository.NormalizeRelativePathForStorage(fileName)
+	if path == "" {
+		return fileName
+	}
+
+	dir := repository.NormalizeRelativePathForStorage(filepath.ToSlash(filepath.Dir(path)))
+	if dir == "" {
+		return fileName
+	}
+	return dir + "/" + fileName
 }
 
 func (s *ModerationService) ensureApprovalTargetFolder(ctx context.Context, rootFolder *model.Folder, relativePath string) (*model.Folder, error) {

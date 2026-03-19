@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -435,6 +436,120 @@ func TestPublicUploadAcceptsManifestBatchWithRelativePaths(t *testing.T) {
 		if submission.RelativePathSnapshot != expectedPaths[submission.TitleSnapshot] {
 			t.Fatalf("unexpected relative path snapshot for %q: %q", submission.TitleSnapshot, submission.RelativePathSnapshot)
 		}
+	}
+}
+
+func TestPublicUploadAutoRenamesDuplicateNamesWithinBatch(t *testing.T) {
+	cfg := newRouterTestConfig(t)
+	db := newRouterTestDB(t)
+	engine := New(db, cfg, newRouterSessionManager(db))
+	folderID := createPublicTestFolder(t, db, "批量目录")
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	if err := writer.WriteField("folder_id", folderID); err != nil {
+		t.Fatalf("write folder_id failed: %v", err)
+	}
+	if err := writer.WriteField("manifest", `[{"relative_path":"课程资料/高数/notes.pdf"},{"relative_path":"课程资料/高数/notes.pdf"}]`); err != nil {
+		t.Fatalf("write manifest failed: %v", err)
+	}
+
+	partOne, err := writer.CreateFormFile("files", "notes.pdf")
+	if err != nil {
+		t.Fatalf("create first file failed: %v", err)
+	}
+	if _, err := partOne.Write([]byte("%PDF-1.4 batch document")); err != nil {
+		t.Fatalf("write first file failed: %v", err)
+	}
+
+	partTwo, err := writer.CreateFormFile("files", "notes.pdf")
+	if err != nil {
+		t.Fatalf("create second file failed: %v", err)
+	}
+	if _, err := partTwo.Write([]byte("%PDF-1.4 another batch document")); err != nil {
+		t.Fatalf("write second file failed: %v", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer failed: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/public/submissions", body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	recorder := httptest.NewRecorder()
+
+	engine.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d, body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var submissions []model.Submission
+	if err := db.Order("relative_path_snapshot ASC").Find(&submissions).Error; err != nil {
+		t.Fatalf("query submissions failed: %v", err)
+	}
+	if len(submissions) != 2 {
+		t.Fatalf("expected 2 submissions, got %d", len(submissions))
+	}
+
+	gotPaths := []string{submissions[0].RelativePathSnapshot, submissions[1].RelativePathSnapshot}
+	expectedPaths := []string{
+		"批量目录/课程资料/高数/notes.pdf",
+		"批量目录/课程资料/高数/notes_1.pdf",
+	}
+	for i := range expectedPaths {
+		if gotPaths[i] != expectedPaths[i] {
+			t.Fatalf("unexpected submission path at %d: got %q want %q", i, gotPaths[i], expectedPaths[i])
+		}
+	}
+}
+
+func TestPublicUploadAutoRenamesWhenManagedDirectoryAlreadyHasSameName(t *testing.T) {
+	cfg := newRouterTestConfig(t)
+	db := newRouterTestDB(t)
+	engine := New(db, cfg, newRouterSessionManager(db))
+	folderID := createPublicTestFolder(t, db, "直发目录")
+
+	setDirectPublishPolicy(t, db)
+
+	var folder model.Folder
+	if err := db.Where("id = ?", folderID).Take(&folder).Error; err != nil {
+		t.Fatalf("load folder failed: %v", err)
+	}
+	if folder.SourcePath == nil {
+		t.Fatal("expected folder source path")
+	}
+
+	existingPath := filepath.Join(*folder.SourcePath, "direct.pdf")
+	if err := os.WriteFile(existingPath, []byte("existing"), 0o644); err != nil {
+		t.Fatalf("seed existing file failed: %v", err)
+	}
+
+	body, contentType := buildUploadRequestBody(t, uploadRequestBody{
+		folderID:    folderID,
+		fileName:    "direct.pdf",
+		fileContent: []byte("%PDF-1.4 direct document"),
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/api/public/submissions", body)
+	request.Header.Set("Content-Type", contentType)
+	recorder := httptest.NewRecorder()
+
+	engine.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d, body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var file model.File
+	if err := db.Where("original_name = ?", "direct_1.pdf").Take(&file).Error; err != nil {
+		t.Fatalf("query renamed file failed: %v", err)
+	}
+	if file.Title != "direct_1" {
+		t.Fatalf("expected renamed title direct_1, got %q", file.Title)
+	}
+	if filepath.Base(file.DiskPath) != "direct_1.pdf" {
+		t.Fatalf("expected renamed disk file direct_1.pdf, got %q", filepath.Base(file.DiskPath))
 	}
 }
 

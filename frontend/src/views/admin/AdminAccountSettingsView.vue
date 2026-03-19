@@ -164,7 +164,7 @@ function readFileAsDataURL(file: File) {
         </div>
 
         <div class="mt-6 flex items-center gap-4">
-          <div class="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 text-3xl font-semibold text-slate-700">
+          <div class="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-3xl font-semibold text-slate-700">
             <img v-if="profileForm.avatarUrl" :src="profileForm.avatarUrl" alt="头像预览" class="h-full w-full object-cover" />
             <span v-else>{{ sessionStore.displayName.slice(0, 1).toUpperCase() || "A" }}</span>
           </div>

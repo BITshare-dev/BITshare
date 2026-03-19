@@ -149,27 +149,16 @@ func (s *PublicCatalogService) ListPublicFolders(ctx context.Context, parentID s
 		return nil, fmt.Errorf("list public folders: %w", err)
 	}
 
-	folderIDs := make([]string, 0, len(rows))
-	for _, row := range rows {
-		folderIDs = append(folderIDs, row.ID)
-	}
-
-	statsByFolderID, err := s.repository.SummarizePublicFolders(ctx, folderIDs)
-	if err != nil {
-		return nil, fmt.Errorf("summarize public folders: %w", err)
-	}
-
 	items := make([]PublicFolderItem, 0, len(rows))
 	for _, row := range rows {
-		stats := statsByFolderID[row.ID]
 		items = append(items, PublicFolderItem{
 			ID:            row.ID,
 			Name:          row.Name,
 			Description:   row.Description,
 			UpdatedAt:     row.UpdatedAt,
-			FileCount:     stats.FileCount,
-			DownloadCount: stats.DownloadCount,
-			TotalSize:     stats.TotalSizeBytes,
+			FileCount:     row.FileCount,
+			DownloadCount: row.DownloadCount,
+			TotalSize:     row.TotalSize,
 		})
 	}
 
@@ -211,21 +200,15 @@ func (s *PublicCatalogService) GetPublicFolderDetail(ctx context.Context, folder
 		breadcrumbs[i], breadcrumbs[j] = breadcrumbs[j], breadcrumbs[i]
 	}
 
-	statsByFolderID, err := s.repository.SummarizePublicFolders(ctx, []string{current.ID})
-	if err != nil {
-		return nil, fmt.Errorf("summarize public folder detail: %w", err)
-	}
-	stats := statsByFolderID[current.ID]
-
 	return &PublicFolderDetail{
 		ID:            current.ID,
 		Name:          current.Name,
 		Description:   current.Description,
 		ParentID:      current.ParentID,
 		Breadcrumbs:   breadcrumbs,
-		FileCount:     stats.FileCount,
-		DownloadCount: stats.DownloadCount,
-		TotalSize:     stats.TotalSizeBytes,
+		FileCount:     current.FileCount,
+		DownloadCount: current.DownloadCount,
+		TotalSize:     current.TotalSize,
 		UpdatedAt:     current.UpdatedAt,
 	}, nil
 }

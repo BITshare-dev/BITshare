@@ -3,8 +3,8 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { Check, Github, UserRound } from "lucide-vue-next";
 import { useRouter } from "vue-router";
 
-import { HttpError, httpClient } from "../lib/http/client";
-import { useSessionStore } from "../stores/session";
+import { HttpError, httpClient } from "../../lib/http/client";
+import { useSessionStore } from "../../stores/session";
 
 export interface NavbarItem {
   label: string;

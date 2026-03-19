@@ -14,10 +14,10 @@ type AdminDashboardService struct {
 }
 
 type AdminDashboardStats struct {
-	TotalVisitorIPs    int64 `json:"total_visitor_ips"`
+	TotalVisits        int64 `json:"total_visits"`
 	TotalFiles         int64 `json:"total_files"`
 	TotalDownloads     int64 `json:"total_downloads"`
-	RecentVisitorIPs   int64 `json:"recent_visitor_ips"`
+	RecentVisits       int64 `json:"recent_visits"`
 	RecentFiles        int64 `json:"recent_files"`
 	RecentDownloads    int64 `json:"recent_downloads"`
 	PendingSubmissions int64 `json:"pending_submissions"`
@@ -40,10 +40,10 @@ func (s *AdminDashboardService) GetStats(ctx context.Context) (*AdminDashboardSt
 	}
 
 	return &AdminDashboardStats{
-		TotalVisitorIPs:    row.TotalVisitorIPs,
+		TotalVisits:        row.TotalVisits,
 		TotalFiles:         row.TotalFiles,
 		TotalDownloads:     row.TotalDownloads,
-		RecentVisitorIPs:   row.RecentVisitorIPs,
+		RecentVisits:       row.RecentVisits,
 		RecentFiles:        row.RecentFiles,
 		RecentDownloads:    row.RecentDownloads,
 		PendingSubmissions: row.PendingSubmissions,

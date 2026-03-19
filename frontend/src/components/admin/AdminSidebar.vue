@@ -48,7 +48,7 @@ const emit = defineEmits<{
   <aside class="flex h-full flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
     <div class="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
       <div class="flex items-center gap-3">
-        <div class="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-[#fafafa] text-lg font-semibold text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100">
+        <div class="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-[#fafafa] text-lg font-semibold text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100">
           <img v-if="avatarUrl" :src="avatarUrl" alt="管理员头像" class="h-full w-full object-cover" />
           <span v-else>{{ avatarFallback }}</span>
         </div>

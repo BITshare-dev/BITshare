@@ -110,7 +110,7 @@
   }
 
   .data-table thead th {
-    @apply border-b border-slate-200 px-4 py-3 text-left text-xs font-medium uppercase tracking-[0.08em] text-slate-500 dark:border-slate-800 dark:text-slate-400;
+    @apply border-b border-slate-200 px-4 py-3 text-xs font-medium uppercase tracking-[0.08em] text-slate-500 dark:border-slate-800 dark:text-slate-400;
   }
 
   .data-table tbody td {

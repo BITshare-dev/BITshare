@@ -127,6 +127,9 @@ func (r *ModerationRepository) ApproveSubmission(
 	targetFolderID string,
 	finalDiskPath string,
 	finalStoredName string,
+	finalOriginalName string,
+	finalTitle string,
+	finalRelativePath string,
 ) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var submission model.Submission
@@ -146,11 +149,13 @@ func (r *ModerationRepository) ApproveSubmission(
 		if err := tx.Model(&model.File{}).
 			Where("id = ?", file.ID).
 			Updates(map[string]any{
-				"folder_id":   targetFolderID,
-				"status":      model.ResourceStatusActive,
-				"disk_path":   finalDiskPath,
-				"stored_name": finalStoredName,
-				"updated_at":  reviewedAt,
+				"folder_id":      targetFolderID,
+				"title":          finalTitle,
+				"original_name":  finalOriginalName,
+				"status":         model.ResourceStatusActive,
+				"disk_path":      finalDiskPath,
+				"stored_name":    finalStoredName,
+				"updated_at":     reviewedAt,
 			}).Error; err != nil {
 			return fmt.Errorf("approve file: %w", err)
 		}
@@ -158,13 +163,29 @@ func (r *ModerationRepository) ApproveSubmission(
 		if err := tx.Model(&model.Submission{}).
 			Where("id = ?", submissionID).
 			Updates(map[string]any{
-				"status":        model.SubmissionStatusApproved,
-				"reject_reason": "",
-				"reviewer_id":   &reviewerID,
-				"reviewed_at":   &reviewedAt,
-				"updated_at":    reviewedAt,
+				"title_snapshot":         finalTitle,
+				"relative_path_snapshot": finalRelativePath,
+				"status":                 model.SubmissionStatusApproved,
+				"reject_reason":          "",
+				"reviewer_id":            &reviewerID,
+				"reviewed_at":            &reviewedAt,
+				"updated_at":             reviewedAt,
 			}).Error; err != nil {
 			return fmt.Errorf("approve submission: %w", err)
+		}
+
+		targetID := targetFolderID
+		if err := model.AdjustFolderStatsTx(tx, &targetID, file.Size, file.DownloadCount, 1); err != nil {
+			return fmt.Errorf("adjust approved folder stats: %w", err)
+		}
+		if err := model.AdjustSystemStatsTx(tx, model.SystemStatsDelta{
+			TotalFiles:         1,
+			PendingSubmissions: -1,
+		}); err != nil {
+			return fmt.Errorf("adjust approved submission system stats: %w", err)
+		}
+		if err := model.AdjustDailyStatsTx(tx, file.CreatedAt, model.DailyStatsDelta{NewFiles: 1}); err != nil {
+			return fmt.Errorf("adjust approved submission daily stats: %w", err)
 		}
 
 		logID, err := newOperationLogID()
@@ -177,7 +198,7 @@ func (r *ModerationRepository) ApproveSubmission(
 			Action:     "submission_approved",
 			TargetType: "submission",
 			TargetID:   submissionID,
-			Detail:     file.OriginalName,
+			Detail:     finalOriginalName,
 			IP:         operatorIP,
 			CreatedAt:  reviewedAt,
 		}
@@ -231,6 +252,10 @@ func (r *ModerationRepository) RejectSubmission(
 				"updated_at": reviewedAt,
 			}).Error; err != nil {
 			return fmt.Errorf("touch file after rejection: %w", err)
+		}
+
+		if err := model.AdjustSystemStatsTx(tx, model.SystemStatsDelta{PendingSubmissions: -1}); err != nil {
+			return fmt.Errorf("adjust rejected submission system stats: %w", err)
 		}
 
 		logID, err := newOperationLogID()

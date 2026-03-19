@@ -34,9 +34,9 @@ function clearSearch() {
 </script>
 
 <template>
-  <section :class="props.embedded ? 'px-5 py-5 sm:px-6' : 'panel px-6 py-6'">
-    <div class="space-y-6">
-      <div class="space-y-4">
+  <section :class="props.embedded ? 'px-5 py-4 sm:px-6' : 'panel px-6 py-6'">
+    <div class="space-y-4">
+      <div class="space-y-3">
         <form class="flex flex-col gap-3 xl:flex-row xl:items-center" @submit.prevent="submitSearch">
           <label class="relative block min-w-0 flex-1">
             <Search class="pointer-events-none absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />

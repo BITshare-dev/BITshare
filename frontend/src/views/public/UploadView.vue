@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 import EmptyState from "../../components/ui/EmptyState.vue";
 import PageHeader from "../../components/ui/PageHeader.vue";
@@ -23,7 +23,9 @@ interface FeedbackLookupResponse {
   receipt_code: string;
   items: Array<{
     target_name: string;
+    target_path: string;
     description: string;
+    review_reason: string;
     status: string;
     created_at: string;
     reviewed_at: string | null;
@@ -35,6 +37,34 @@ const lookupLoading = ref(false);
 const lookupError = ref("");
 const submissionLookupResult = ref<SubmissionLookupResponse | null>(null);
 const feedbackLookupResult = ref<FeedbackLookupResponse | null>(null);
+
+const receiptRecords = computed(() => {
+  const submissionItems = (submissionLookupResult.value?.items ?? []).map((item) => ({
+    kind: "submission" as const,
+    key: `submission-${item.title}-${item.uploaded_at}`,
+    status: item.status,
+    title: submissionDisplayName(item),
+    createdAt: item.uploaded_at,
+    relativePath: item.relative_path,
+    description: "",
+    reviewReason: item.reject_reason ?? "",
+  }));
+
+  const feedbackItems = (feedbackLookupResult.value?.items ?? []).map((item) => ({
+    kind: "feedback" as const,
+    key: `feedback-${item.target_name}-${item.created_at}`,
+    status: item.status,
+    title: item.target_name || "-",
+    createdAt: item.created_at,
+    relativePath: item.target_path,
+    description: item.description,
+    reviewReason: item.review_reason,
+  }));
+
+  return [...submissionItems, ...feedbackItems].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+});
 
 onMounted(() => {
   void syncSessionReceiptCode();
@@ -140,6 +170,15 @@ function feedbackStatusLabel(status: string) {
   return labels[status] ?? status;
 }
 
+function statusBadgeClass(status: string) {
+  const styles: Record<string, string> = {
+    pending: "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200",
+    approved: "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200",
+    rejected: "bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-200",
+  };
+  return styles[status] ?? "bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200";
+}
+
 </script>
 
 <template>
@@ -151,7 +190,7 @@ function feedbackStatusLabel(status: string) {
           title="回执查询"
         />
 
-        <div class="mt-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-7 text-slate-600">
+        <div class="mt-6 rounded-xl border border-slate-200 bg-[#fafafa] px-4 py-3 text-sm leading-7 text-slate-600">
           本会话回执码为：<span class="font-semibold text-slate-900">{{ receiptCode || "暂未同步" }}</span>。请妥善保存该回执码，若清除浏览器缓存或更换浏览器/设备，该回执码将会改变。
         </div>
 
@@ -178,62 +217,40 @@ function feedbackStatusLabel(status: string) {
         </p>
         <p v-else-if="lookupLoading" class="mt-4 text-sm text-slate-500">正在查询…</p>
 
-        <div v-if="submissionLookupResult" class="mt-6 space-y-3">
+        <div v-if="receiptRecords.length" class="mt-6 space-y-3">
           <article
-            v-for="item in submissionLookupResult.items"
-            :key="`${item.title}-${item.uploaded_at}`"
+            v-for="item in receiptRecords"
+            :key="item.key"
             class="rounded-xl border border-slate-200 bg-white px-5 py-5"
           >
             <div class="space-y-4">
               <div>
-                <span class="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                  {{ submissionStatusLabel(item.status) }}
+                <span
+                  class="rounded-md px-2.5 py-1 text-xs font-medium"
+                  :class="statusBadgeClass(item.status)"
+                >
+                  {{ item.kind === "submission" ? submissionStatusLabel(item.status) : feedbackStatusLabel(item.status) }}
                 </span>
                 <p class="mt-3 text-sm text-slate-500">
-                  当前类型：<span class="font-medium text-slate-900">上传记录</span>
+                  当前类型：<span class="font-medium text-slate-900">{{ item.kind === "submission" ? "上传记录" : "反馈记录" }}</span>
                 </p>
               </div>
               <div class="space-y-3 text-sm text-slate-500">
-                <p class="text-xl font-semibold tracking-tight text-slate-900">{{ submissionDisplayName(item) }}</p>
-                <p><span class="font-medium text-slate-900">提交时间：</span>{{ formatDate(item.uploaded_at) }}</p>
-                <p v-if="item.relative_path" class="break-all">
-                  <span class="font-medium text-slate-900">文件位置：</span>{{ item.relative_path }}
+                <p class="text-xl font-semibold tracking-tight text-slate-900">{{ item.title }}</p>
+                <p><span class="font-medium text-slate-900">提交时间：</span>{{ formatDate(item.createdAt) }}</p>
+                <p v-if="item.relativePath" class="break-all">
+                  <span class="font-medium text-slate-900">文件位置：</span>{{ item.relativePath }}
                 </p>
               </div>
               <div class="space-y-3 text-sm text-slate-500">
-                <p><span class="font-medium text-slate-900">下载：</span>{{ item.download_count }}</p>
-                <p v-if="item.reject_reason"><span class="font-medium text-slate-900">驳回原因：</span>{{ item.reject_reason }}</p>
+                <p v-if="item.kind === 'feedback' && item.description"><span class="font-medium text-slate-900">说明：</span>{{ item.description }}</p>
+                <p v-if="item.reviewReason"><span class="font-medium text-slate-900">处理说明：</span>{{ item.reviewReason }}</p>
               </div>
             </div>
           </article>
         </div>
 
-        <div v-if="feedbackLookupResult" class="mt-6 space-y-3">
-          <article
-            v-for="item in feedbackLookupResult.items"
-            :key="`${item.target_name}-${item.created_at}`"
-            class="rounded-xl border border-slate-200 bg-white px-5 py-5 text-sm text-slate-600"
-          >
-            <div class="space-y-4">
-              <div>
-                <span class="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                  {{ feedbackStatusLabel(item.status) }}
-                </span>
-                <p class="mt-3 text-sm text-slate-500">
-                  当前类型：<span class="font-medium text-slate-900">反馈记录</span>
-                </p>
-              </div>
-              <div class="space-y-3 text-sm text-slate-500">
-                <p><span class="font-medium text-slate-900">目标：</span>{{ item.target_name || "-" }}</p>
-                <p><span class="font-medium text-slate-900">提交时间：</span>{{ formatDate(item.created_at) }}</p>
-                <p v-if="item.description"><span class="font-medium text-slate-900">说明：</span>{{ item.description }}</p>
-                <p v-if="item.reviewed_at"><span class="font-medium text-slate-900">处理时间：</span>{{ formatDate(item.reviewed_at) }}</p>
-              </div>
-            </div>
-          </article>
-        </div>
-
-        <div v-if="!submissionLookupResult && !feedbackLookupResult" class="mt-6">
+        <div v-if="!receiptRecords.length" class="mt-6">
           <EmptyState title="输入回执码后查看记录" />
         </div>
       </SurfaceCard>

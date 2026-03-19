@@ -79,15 +79,18 @@ type Admin struct {
 
 // Folder is the hierarchical container for files and subfolders.
 type Folder struct {
-	ID          EntityID       `gorm:"column:id;type:text;primaryKey"`
-	ParentID    *EntityID      `gorm:"column:parent_id;type:text;index:idx_folders_parent_id_status"`
-	SourcePath  *string        `gorm:"column:source_path;type:text;uniqueIndex:ux_folders_source_path"`
-	Name        string         `gorm:"column:name;type:text;not null"`
-	Description string         `gorm:"column:description;type:text;not null;default:''"`
-	Status      ResourceStatus `gorm:"column:status;type:text;not null;default:'active';index:idx_folders_parent_id_status;index:idx_folders_status_created_at"`
-	CreatedAt   time.Time      `gorm:"column:created_at;autoCreateTime;index:idx_folders_status_created_at,sort:desc"`
-	UpdatedAt   time.Time      `gorm:"column:updated_at;autoUpdateTime"`
-	DeletedAt   *time.Time     `gorm:"column:deleted_at;type:datetime"`
+	ID            EntityID       `gorm:"column:id;type:text;primaryKey"`
+	ParentID      *EntityID      `gorm:"column:parent_id;type:text;index:idx_folders_parent_id_status"`
+	SourcePath    *string        `gorm:"column:source_path;type:text;uniqueIndex:ux_folders_source_path"`
+	Name          string         `gorm:"column:name;type:text;not null"`
+	Description   string         `gorm:"column:description;type:text;not null;default:''"`
+	FileCount     int64          `gorm:"column:file_count;type:integer;not null;default:0"`
+	TotalSize     int64          `gorm:"column:total_size;type:integer;not null;default:0"`
+	DownloadCount int64          `gorm:"column:download_count;type:integer;not null;default:0"`
+	Status        ResourceStatus `gorm:"column:status;type:text;not null;default:'active';index:idx_folders_parent_id_status;index:idx_folders_status_created_at"`
+	CreatedAt     time.Time      `gorm:"column:created_at;autoCreateTime;index:idx_folders_status_created_at,sort:desc"`
+	UpdatedAt     time.Time      `gorm:"column:updated_at;autoUpdateTime"`
+	DeletedAt     *time.Time     `gorm:"column:deleted_at;type:datetime"`
 
 	// Relations
 	Parent   *Folder  `gorm:"foreignKey:ParentID"`
@@ -153,6 +156,7 @@ type Report struct {
 	FileID       *EntityID    `gorm:"column:file_id;type:text;index:idx_reports_file_id"`
 	FolderID     *EntityID    `gorm:"column:folder_id;type:text;index:idx_reports_folder_id"`
 	TargetName   string       `gorm:"column:target_name;type:text;not null;default:''"`
+	TargetPath   string       `gorm:"column:target_path;type:text;not null;default:''"`
 	TargetType   string       `gorm:"column:target_type;type:text;not null;default:''"`
 	Reason       string       `gorm:"column:reason;type:text;not null"`
 	Description  string       `gorm:"column:description;type:text;not null;default:''"`
@@ -213,7 +217,7 @@ type AdminSession struct {
 	Admin Admin `gorm:"foreignKey:AdminID"`
 }
 
-// SiteVisitEvent records a page-level site visit used for IP metrics.
+// SiteVisitEvent records a page-level site visit used for visit metrics.
 type SiteVisitEvent struct {
 	ID        EntityID  `gorm:"column:id;type:text;primaryKey"`
 	Scope     string    `gorm:"column:scope;type:text;not null;default:''"`
@@ -227,8 +231,28 @@ type DownloadEvent struct {
 	ID        EntityID  `gorm:"column:id;type:text;primaryKey"`
 	FileID    EntityID  `gorm:"column:file_id;type:text;not null;index:idx_download_events_file_id_created_at"`
 	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime;index:idx_download_events_file_id_created_at,sort:desc;index:idx_download_events_created_at,sort:desc"`
+}
 
-	File File `gorm:"foreignKey:FileID"`
+// SystemStat stores dashboard-wide aggregate counters.
+type SystemStat struct {
+	Key                string    `gorm:"column:key;type:text;primaryKey"`
+	TotalVisits        int64     `gorm:"column:total_visits;type:integer;not null;default:0"`
+	TotalFiles         int64     `gorm:"column:total_files;type:integer;not null;default:0"`
+	TotalDownloads     int64     `gorm:"column:total_downloads;type:integer;not null;default:0"`
+	PendingSubmissions int64     `gorm:"column:pending_submissions;type:integer;not null;default:0"`
+	PendingReports     int64     `gorm:"column:pending_reports;type:integer;not null;default:0"`
+	CreatedAt          time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt          time.Time `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+// DailyStat stores per-day dashboard increments.
+type DailyStat struct {
+	Day       string    `gorm:"column:day;type:text;primaryKey"`
+	NewFiles  int64     `gorm:"column:new_files;type:integer;not null;default:0"`
+	Downloads int64     `gorm:"column:downloads;type:integer;not null;default:0"`
+	Visits    int64     `gorm:"column:visits;type:integer;not null;default:0"`
+	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime"`
 }
 
 // SystemSetting stores extensible JSON-backed management policy blobs.
@@ -257,3 +281,5 @@ func (AdminSession) TableName() string   { return "admin_sessions" }
 func (SiteVisitEvent) TableName() string { return "site_visit_events" }
 func (DownloadEvent) TableName() string  { return "download_events" }
 func (SystemSetting) TableName() string  { return "system_settings" }
+func (SystemStat) TableName() string     { return "system_stats" }
+func (DailyStat) TableName() string      { return "daily_stats" }

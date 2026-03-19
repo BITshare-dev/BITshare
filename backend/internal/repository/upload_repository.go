@@ -51,6 +51,32 @@ func (r *UploadRepository) FindActiveFolderByID(ctx context.Context, folderID st
 	return &folder, nil
 }
 
+func (r *UploadRepository) ListPendingRelativePathsByRootFolderID(ctx context.Context, rootFolderID string) ([]string, error) {
+	type pendingPathRow struct {
+		RelativePath string `gorm:"column:relative_path"`
+	}
+
+	var rows []pendingPathRow
+	if err := r.db.WithContext(ctx).
+		Table("submissions").
+		Select("submissions.relative_path_snapshot AS relative_path").
+		Joins("JOIN files ON files.submission_id = submissions.id").
+		Where("files.folder_id = ?", rootFolderID).
+		Where("files.status = ?", model.ResourceStatusOffline).
+		Where("files.deleted_at IS NULL").
+		Where("submissions.status = ?", model.SubmissionStatusPending).
+		Where("files.disk_path <> ''").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list pending relative paths: %w", err)
+	}
+
+	paths := make([]string, 0, len(rows))
+	for _, row := range rows {
+		paths = append(paths, row.RelativePath)
+	}
+	return paths, nil
+}
+
 func (r *UploadRepository) CreateUpload(ctx context.Context, submission *model.Submission, file *model.File) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(submission).Error; err != nil {

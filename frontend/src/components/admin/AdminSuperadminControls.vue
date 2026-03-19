@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 
-import SurfaceCard from "./ui/SurfaceCard.vue";
-import { httpClient } from "../lib/http/client";
-import { readApiError } from "../lib/http/helpers";
+import SurfaceCard from "../ui/SurfaceCard.vue";
+import { httpClient } from "../../lib/http/client";
+import { readApiError } from "../../lib/http/helpers";
 
 interface SystemPolicy {
   guest: {

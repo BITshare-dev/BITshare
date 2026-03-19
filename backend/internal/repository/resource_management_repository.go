@@ -215,6 +215,16 @@ func (r *ResourceManagementRepository) UpdateFileStatusWithLog(
 	now time.Time,
 ) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current model.File
+		if err := tx.Select("id, folder_id, size, download_count, status").
+			Where("id = ?", fileID).
+			Take(&current).Error; err != nil {
+			return err
+		}
+
+		wasActive := current.Status == model.ResourceStatusActive
+		willBeActive := status == model.ResourceStatusActive
+
 		updates := map[string]any{
 			"status":     status,
 			"updated_at": now,
@@ -230,6 +240,36 @@ func (r *ResourceManagementRepository) UpdateFileStatusWithLog(
 		}
 		if result.RowsAffected == 0 {
 			return gorm.ErrRecordNotFound
+		}
+
+		if wasActive != willBeActive {
+			var sizeDelta, downloadDelta, fileCountDelta int64
+			var totalFilesDelta int64
+			var dailyNewFilesDelta int64
+			if willBeActive {
+				sizeDelta = current.Size
+				downloadDelta = current.DownloadCount
+				fileCountDelta = 1
+				totalFilesDelta = 1
+				dailyNewFilesDelta = 1
+			} else {
+				sizeDelta = -current.Size
+				downloadDelta = -current.DownloadCount
+				fileCountDelta = -1
+				totalFilesDelta = -1
+				dailyNewFilesDelta = -1
+			}
+			if err := model.AdjustFolderStatsTx(tx, current.FolderID, sizeDelta, downloadDelta, fileCountDelta); err != nil {
+				return fmt.Errorf("adjust file status folder stats: %w", err)
+			}
+			if err := model.AdjustSystemStatsTx(tx, model.SystemStatsDelta{
+				TotalFiles: totalFilesDelta,
+			}); err != nil {
+				return fmt.Errorf("adjust file status system stats: %w", err)
+			}
+			if err := model.AdjustDailyStatsTx(tx, current.CreatedAt, model.DailyStatsDelta{NewFiles: dailyNewFilesDelta}); err != nil {
+				return fmt.Errorf("adjust file status daily stats: %w", err)
+			}
 		}
 
 		return createOperationLogTx(tx, logID, operatorID, action, "file", fileID, detail, operatorIP, now)
@@ -338,6 +378,26 @@ func (r *ResourceManagementRepository) DeleteFolderTreeWithLog(
 			return gorm.ErrRecordNotFound
 		}
 
+		var root model.Folder
+		if err := tx.Select("id, parent_id, file_count, total_size, download_count").
+			Where("id = ?", rootFolderID).
+			Take(&root).Error; err != nil {
+			return fmt.Errorf("load root folder stats: %w", err)
+		}
+
+		type fileDayStat struct {
+			Day   string
+			Count int64
+		}
+		var activeFileDayStats []fileDayStat
+		if err := tx.Model(&model.File{}).
+			Select("DATE(created_at) AS day, COUNT(*) AS count").
+			Where("folder_id IN ? AND status = ? AND deleted_at IS NULL", folderIDs, model.ResourceStatusActive).
+			Group("DATE(created_at)").
+			Scan(&activeFileDayStats).Error; err != nil {
+			return fmt.Errorf("load deleted folder tree daily file stats: %w", err)
+		}
+
 		if err := tx.Model(&model.File{}).
 			Where("folder_id IN ?", folderIDs).
 			Updates(map[string]any{
@@ -374,6 +434,26 @@ func (r *ResourceManagementRepository) DeleteFolderTreeWithLog(
 					"updated_at": now,
 				}).Error; err != nil {
 				return fmt.Errorf("delete child folders: %w", err)
+			}
+		}
+
+		if root.ParentID != nil {
+			if err := model.AdjustFolderStatsTx(tx, root.ParentID, -root.TotalSize, -root.DownloadCount, -root.FileCount); err != nil {
+				return fmt.Errorf("adjust ancestor folder stats: %w", err)
+			}
+		}
+		if err := model.AdjustSystemStatsTx(tx, model.SystemStatsDelta{
+			TotalFiles: -root.FileCount,
+		}); err != nil {
+			return fmt.Errorf("adjust deleted folder tree system stats: %w", err)
+		}
+		for _, stat := range activeFileDayStats {
+			dayTime, err := time.Parse("2006-01-02", stat.Day)
+			if err != nil {
+				return fmt.Errorf("parse deleted folder tree day: %w", err)
+			}
+			if err := model.AdjustDailyStatsTx(tx, dayTime, model.DailyStatsDelta{NewFiles: -stat.Count}); err != nil {
+				return fmt.Errorf("adjust deleted folder tree daily stats: %w", err)
 			}
 		}
 

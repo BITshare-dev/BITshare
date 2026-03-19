@@ -22,8 +22,8 @@ import {
   Upload,
 } from "lucide-vue-next";
 
-import InfoPanelCard, { type InfoPanelCardItem } from "../../components/InfoPanelCard.vue";
-import SearchSection from "../../components/SearchSection.vue";
+import InfoPanelCard, { type InfoPanelCardItem } from "../../components/shared/InfoPanelCard.vue";
+import SearchSection from "../../components/resources/SearchSection.vue";
 import { HttpError, httpClient } from "../../lib/http/client";
 import { readApiError } from "../../lib/http/helpers";
 import { ensureSessionReceiptCode, readStoredReceiptCode } from "../../lib/receiptCode";
@@ -39,6 +39,7 @@ interface AnnouncementItem {
   creator: {
     id: string;
     username: string;
+    display_name: string;
     avatar_url: string;
     role: string;
   };
@@ -138,6 +139,7 @@ const transientWarningTimer = ref<number | null>(null);
 const downloadTimestamps = ref<number[]>([]);
 const transientWarningLeaving = ref(false);
 const uploadModalOpen = ref(false);
+const uploadSuccessModalOpen = ref(false);
 const uploadSubmitting = ref(false);
 const uploadMessage = ref("");
 const uploadError = ref("");
@@ -150,6 +152,7 @@ const uploadForm = ref({
 const uploadDropActive = ref(false);
 const uploadCollecting = ref(false);
 const feedbackModalOpen = ref(false);
+const feedbackSuccessModalOpen = ref(false);
 const feedbackTarget = ref<{ id: string; type: "file" | "folder"; name: string } | null>(null);
 const feedbackDescription = ref("");
 const feedbackSubmitting = ref(false);
@@ -394,7 +397,9 @@ function syncBodyScrollLock() {
       || announcementListOpen.value
       || sidebarDetailModal.value
       || uploadModalOpen.value
+      || uploadSuccessModalOpen.value
       || feedbackModalOpen.value
+      || feedbackSuccessModalOpen.value
       || folderDescriptionEditorOpen.value
       || deleteResourceTarget.value,
   );
@@ -467,7 +472,7 @@ function closeAnnouncementList() {
 }
 
 function announcementAuthorName(item: AnnouncementItem) {
-  return item.creator?.username?.trim() || "未知用户";
+  return item.creator?.display_name?.trim() || item.creator?.username?.trim() || "未知用户";
 }
 
 function announcementAuthorInitial(item: AnnouncementItem) {
@@ -774,6 +779,11 @@ function closeUploadModal() {
   syncBodyScrollLock();
 }
 
+function closeUploadSuccessModal() {
+  uploadSuccessModalOpen.value = false;
+  syncBodyScrollLock();
+}
+
 function onUploadFileChange(event: Event) {
   const target = event.target as HTMLInputElement;
   uploadForm.value.entries = normalizeFiles(Array.from(target.files ?? []).slice(0, 1));
@@ -853,6 +863,9 @@ async function submitUpload() {
     if (response.status === "approved") {
       await loadDirectory();
     }
+    closeUploadModal();
+    uploadSuccessModalOpen.value = true;
+    syncBodyScrollLock();
   } catch (err) {
     if (err instanceof HttpError && err.status === 400) {
       uploadError.value = "上传参数无效。";
@@ -996,6 +1009,11 @@ function closeFeedbackModal() {
   syncBodyScrollLock();
 }
 
+function closeFeedbackSuccessModal() {
+  feedbackSuccessModalOpen.value = false;
+  syncBodyScrollLock();
+}
+
 function openFolderDescriptionEditor() {
   folderNameDraft.value = currentFolderDetail.value?.name ?? "";
   folderDescriptionDraft.value = currentFolderDetail.value?.description ?? "";
@@ -1069,6 +1087,9 @@ async function submitFeedback() {
     feedbackMessage.value = `反馈已提交，请保存回执码 ${response.receipt_code}。`;
     window.sessionStorage.setItem("openshare_receipt_code", response.receipt_code);
     currentReceiptCode.value = response.receipt_code;
+    closeFeedbackModal();
+    feedbackSuccessModalOpen.value = true;
+    syncBodyScrollLock();
   } catch (err: unknown) {
     if (err instanceof HttpError && err.status === 400) {
       feedbackError.value = "反馈原因无效。";
@@ -1181,40 +1202,10 @@ async function syncSessionReceiptCode() {
   </Teleport>
 
   <main class="app-container py-8 lg:py-10">
-    <div class="grid gap-6 xl:grid-cols-[248px_minmax(0,1fr)]">
-      <aside class="space-y-4 xl:pt-2">
-        <InfoPanelCard
-          title="公告栏"
-          :items="recentAnnouncements"
-          clickable
-          action-label="详情"
-          empty-text="暂无公告"
-          @select="openAnnouncementDetail"
-          @action="openAnnouncementList"
-        />
-        <InfoPanelCard
-          title="热门下载"
-          :items="hotDownloads"
-          clickable
-          action-label="详情"
-          empty-text="暂无下载数据"
-          @select="openSidebarDetailItem"
-          @action="openHotDownloadsModal"
-        />
-        <InfoPanelCard
-          title="资料上新"
-          :items="latestTitles"
-          clickable
-          action-label="详情"
-          empty-text="暂无最新资料"
-          @select="openSidebarDetailItem"
-          @action="openLatestItemsModal"
-        />
-      </aside>
-
-      <section class="min-w-0">
+    <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_248px]">
+      <section class="order-1 min-w-0">
         <div class="panel overflow-hidden">
-          <div class="border-b border-slate-200 px-5 py-4 sm:px-6 dark:border-slate-800">
+          <div class="border-b border-slate-200 px-5 py-3 sm:px-6 dark:border-slate-800">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div class="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                 <button type="button" class="inline-flex items-center gap-2 rounded-full px-2 py-1 transition hover:bg-slate-100 hover:text-slate-900" @click="openRoot">
@@ -1240,19 +1231,19 @@ async function syncSessionReceiptCode() {
             <SearchSection embedded :loading="searchLoading" @search="runSearch" @clear="clearSearchState" />
           </div>
 
-          <p v-if="searchError" class="mx-5 mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 sm:mx-6">
+          <p v-if="searchError" class="mx-5 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 sm:mx-6">
             {{ searchError }}
           </p>
           <div
             v-else-if="searchKeyword"
-            class="mx-5 mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 sm:mx-6"
+            class="mx-5 mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 sm:mx-6"
           >
             当前搜索：<span class="font-medium text-slate-900">{{ searchKeyword }}</span>
             <span class="ml-2">共 {{ searchRows.length }} 条结果</span>
           </div>
 
-          <div class="px-5 pb-5 sm:px-6">
-            <div class="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4">
+          <div class="px-5 pb-2 sm:px-6">
+            <div class="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3">
               <button
                 type="button"
                 class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-45"
@@ -1363,7 +1354,7 @@ async function syncSessionReceiptCode() {
           <div v-else-if="sortedRows.length === 0" class="px-5 py-8 text-sm text-slate-500 sm:px-6">
             {{ searchKeyword ? "没有找到匹配结果。" : "当前目录为空。" }}
           </div>
-          <div v-else-if="viewMode === 'cards'" class="grid gap-4 px-5 py-5 sm:grid-cols-2 sm:px-6 2xl:grid-cols-3">
+          <div v-else-if="viewMode === 'cards'" class="grid gap-4 px-5 py-3 sm:grid-cols-2 sm:px-6 2xl:grid-cols-3">
             <article
               v-for="row in sortedRows"
               :key="`${row.kind}-${row.id}`"
@@ -1417,15 +1408,14 @@ async function syncSessionReceiptCode() {
               <div class="mt-auto flex items-center justify-between border-t border-slate-100 py-2.5">
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3.5 py-1.5 text-sm font-medium text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
+                  class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white p-2.5 text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
                   @click.stop="openFeedbackModal({ id: row.id, type: row.kind, name: row.name })"
                 >
                   <Flag class="h-4 w-4" />
-                  反馈
                 </button>
                 <button
                   type="button"
-                  class="inline-flex items-center justify-center rounded-xl bg-slate-900 p-2.5 text-white transition hover:bg-slate-800"
+                  class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white p-2.5 text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
                   @click.stop="downloadResource(row)"
                 >
                   <Download class="h-4 w-4" />
@@ -1438,9 +1428,9 @@ async function syncSessionReceiptCode() {
               <thead>
                 <tr>
                   <th class="w-10"></th>
-                  <th>名称</th>
-                  <th class="text-right">大小</th>
-                  <th class="text-right">修改时间</th>
+                  <th class="text-left">名称</th>
+                  <th class="w-[160px] text-right">大小</th>
+                  <th class="w-[220px] text-right">修改时间</th>
                 </tr>
               </thead>
               <tbody>
@@ -1474,8 +1464,8 @@ async function syncSessionReceiptCode() {
                       <span class="truncate text-slate-900 dark:text-slate-100">{{ row.name }}</span>
                     </div>
                   </td>
-                  <td class="text-right">{{ row.sizeText }}</td>
-                  <td class="text-right">{{ row.updatedAt }}</td>
+                  <td class="w-[160px] text-right tabular-nums">{{ row.sizeText }}</td>
+                  <td class="w-[220px] text-right tabular-nums">{{ row.updatedAt }}</td>
                 </tr>
               </tbody>
             </table>
@@ -1524,7 +1514,7 @@ async function syncSessionReceiptCode() {
                   </button>
                   <button
                     type="button"
-                    class="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-white transition hover:bg-slate-800"
+                    class="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
                     aria-label="下载文件夹"
                     @click="downloadCurrentFolder"
                   >
@@ -1546,6 +1536,36 @@ async function syncSessionReceiptCode() {
 
         </div>
       </section>
+
+      <aside class="order-2 space-y-4">
+        <InfoPanelCard
+          title="公告栏"
+          :items="recentAnnouncements"
+          clickable
+          action-label="详情"
+          empty-text="暂无公告"
+          @select="openAnnouncementDetail"
+          @action="openAnnouncementList"
+        />
+        <InfoPanelCard
+          title="热门下载"
+          :items="hotDownloads"
+          clickable
+          action-label="详情"
+          empty-text="暂无下载数据"
+          @select="openSidebarDetailItem"
+          @action="openHotDownloadsModal"
+        />
+        <InfoPanelCard
+          title="资料上新"
+          :items="latestTitles"
+          clickable
+          action-label="详情"
+          empty-text="暂无最新资料"
+          @select="openSidebarDetailItem"
+          @action="openLatestItemsModal"
+        />
+      </aside>
     </div>
   </main>
 
@@ -1568,7 +1588,12 @@ async function syncSessionReceiptCode() {
           </p>
           <div class="flex items-center gap-3">
             <button type="button" class="btn-secondary" @click="clearSelection">取消选择</button>
-            <button type="button" class="btn-primary" :disabled="batchDownloadSubmitting" @click="downloadSelectedResources">
+            <button
+              type="button"
+              class="inline-flex h-11 items-center rounded-xl border border-slate-200 bg-white px-5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="batchDownloadSubmitting"
+              @click="downloadSelectedResources"
+            >
               {{ batchDownloadSubmitting ? "打包中…" : "批量下载" }}
             </button>
           </div>
@@ -1747,6 +1772,24 @@ async function syncSessionReceiptCode() {
 
   <Teleport to="body">
     <Transition name="modal-shell">
+    <div v-if="uploadSuccessModalOpen" class="fixed inset-0 z-[120] bg-slate-950/40 backdrop-blur-sm">
+      <div class="flex min-h-screen items-center justify-center px-4 py-6">
+        <div class="modal-card w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+          <div class="space-y-3">
+            <h3 class="text-lg font-semibold text-slate-900">提交成功</h3>
+            <p class="text-sm leading-6 text-slate-600">{{ uploadMessage }}</p>
+          </div>
+          <div class="mt-6 flex justify-end">
+            <button type="button" class="btn-primary" @click="closeUploadSuccessModal">知道了</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </Transition>
+  </Teleport>
+
+  <Teleport to="body">
+    <Transition name="modal-shell">
     <div v-if="uploadModalOpen" class="fixed inset-0 z-[120] overflow-y-auto bg-slate-950/40 backdrop-blur-sm">
       <div class="flex min-h-screen items-start justify-center px-4 py-6">
         <div class="modal-card panel w-full max-w-2xl overflow-hidden">
@@ -1857,24 +1900,44 @@ async function syncSessionReceiptCode() {
 
   <Teleport to="body">
     <Transition name="modal-shell">
+    <div v-if="feedbackSuccessModalOpen" class="fixed inset-0 z-[120] bg-slate-950/40 backdrop-blur-sm">
+      <div class="flex min-h-screen items-center justify-center px-4 py-6">
+        <div class="modal-card w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+          <div class="space-y-3">
+            <h3 class="text-lg font-semibold text-slate-900">提交成功</h3>
+            <p class="text-sm leading-6 text-slate-600">{{ feedbackMessage }}</p>
+          </div>
+          <div class="mt-6 flex justify-end">
+            <button type="button" class="btn-primary" @click="closeFeedbackSuccessModal">知道了</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </Transition>
+  </Teleport>
+
+  <Teleport to="body">
+    <Transition name="modal-shell">
     <div v-if="feedbackModalOpen" class="fixed inset-0 z-[120] bg-slate-950/40 backdrop-blur-sm">
       <div class="flex min-h-screen items-center justify-center px-4 py-6">
         <div class="modal-card panel w-full max-w-2xl overflow-hidden p-6">
-          <div class="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
-            <div>
+          <div class="flex items-start justify-between gap-4 border-b border-slate-200 pb-5">
+            <div class="space-y-1">
               <h3 class="text-lg font-semibold text-slate-900">反馈中心</h3>
+              <p class="text-sm text-slate-500">填写问题说明后提交，我们会尽快处理。</p>
             </div>
             <button type="button" class="btn-secondary" @click="closeFeedbackModal">关闭</button>
           </div>
 
-          <div class="mt-5 space-y-4">
-            <div>
-              <p v-if="feedbackTarget" class="mt-2 text-sm text-slate-600">当前对象：{{ feedbackTarget.name }}</p>
+          <div class="mt-6 space-y-5">
+            <div v-if="feedbackTarget" class="rounded-2xl border border-slate-200 bg-[#fafafafa] px-4 py-3">
+              <p class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">当前对象</p>
+              <p class="mt-1 text-sm leading-6 text-slate-700">{{ feedbackTarget.name }}</p>
             </div>
 
             <label class="space-y-2">
               <span class="text-sm font-medium text-slate-700">回执码</span>
-              <div class="rounded-xl bg-slate-50 px-4 py-3">
+              <div class="rounded-2xl border border-slate-200 bg-[#fafafafa] px-4 py-3">
                 <p class="text-sm font-semibold tracking-[0.12em] text-slate-900">
                   {{ currentReceiptCode || "当前会话回执码暂未同步" }}
                 </p>
@@ -1894,7 +1957,7 @@ async function syncSessionReceiptCode() {
             <p v-if="feedbackMessage" class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ feedbackMessage }}</p>
             <p v-if="feedbackError" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ feedbackError }}</p>
 
-            <div class="flex justify-end gap-3">
+            <div class="flex justify-end gap-3 pt-1">
               <button type="button" class="btn-secondary" @click="closeFeedbackModal">取消</button>
               <button type="button" class="btn-primary" :disabled="feedbackSubmitDisabled" @click="submitFeedback">
                 {{ feedbackSubmitting ? "提交中…" : "提交反馈" }}

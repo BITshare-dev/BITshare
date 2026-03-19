@@ -44,6 +44,7 @@ type AnnouncementItem struct {
 type AnnouncementCreator struct {
 	ID        string `json:"id"`
 	Username  string `json:"username"`
+	DisplayName string `json:"display_name"`
 	AvatarURL string `json:"avatar_url"`
 	Role      string `json:"role"`
 }
@@ -329,10 +330,11 @@ func mapAnnouncements(items []model.Announcement) []AnnouncementItem {
 			IsPinned:    item.IsPinned,
 			CreatedByID: item.CreatedByID,
 			Creator: AnnouncementCreator{
-				ID:        item.CreatedBy.ID,
-				Username:  item.CreatedBy.Username,
-				AvatarURL: item.CreatedBy.AvatarURL,
-				Role:      item.CreatedBy.Role,
+				ID:          item.CreatedBy.ID,
+				Username:    item.CreatedBy.Username,
+				DisplayName: item.CreatedBy.DisplayName,
+				AvatarURL:   item.CreatedBy.AvatarURL,
+				Role:        item.CreatedBy.Role,
 			},
 			PublishedAt: item.PublishedAt,
 			CreatedAt:   item.CreatedAt,

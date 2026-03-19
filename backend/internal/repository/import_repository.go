@@ -203,10 +203,42 @@ func (r *ImportRepository) DeleteManagedRootWithLog(ctx context.Context, rootFol
 			return fmt.Errorf("list files for deletion: %w", err)
 		}
 
+		type activeFileAggregate struct {
+			Count int64
+		}
+		var activeFiles activeFileAggregate
+		if err := tx.Model(&model.File{}).
+			Select("COUNT(*) AS count").
+			Where("folder_id IN ? AND status = ? AND deleted_at IS NULL", folderIDs, model.ResourceStatusActive).
+			Scan(&activeFiles).Error; err != nil {
+			return fmt.Errorf("aggregate files for deletion: %w", err)
+		}
+
+		type dayStat struct {
+			Day   string
+			Count int64
+		}
+		var createdDayStats []dayStat
+		if err := tx.Model(&model.File{}).
+			Select("DATE(created_at) AS day, COUNT(*) AS count").
+			Where("folder_id IN ? AND status = ? AND deleted_at IS NULL", folderIDs, model.ResourceStatusActive).
+			Group("DATE(created_at)").
+			Scan(&createdDayStats).Error; err != nil {
+			return fmt.Errorf("aggregate file day stats for deletion: %w", err)
+		}
+
+		var pendingReports int64
+		reportQuery := tx.Model(&model.Report{}).Where("status = ?", model.ReportStatusPending)
 		if len(fileIDs) > 0 {
-			if err := tx.Where("file_id IN ?", fileIDs).Delete(&model.DownloadEvent{}).Error; err != nil {
-				return fmt.Errorf("delete download events: %w", err)
-			}
+			reportQuery = reportQuery.Where("(file_id IN ? OR folder_id IN ?)", fileIDs, folderIDs)
+		} else {
+			reportQuery = reportQuery.Where("folder_id IN ?", folderIDs)
+		}
+		if err := reportQuery.Count(&pendingReports).Error; err != nil {
+			return fmt.Errorf("count pending reports for deletion: %w", err)
+		}
+
+		if len(fileIDs) > 0 {
 			if err := tx.Where("file_id IN ?", fileIDs).Delete(&model.Report{}).Error; err != nil {
 				return fmt.Errorf("delete file reports: %w", err)
 			}
@@ -222,6 +254,21 @@ func (r *ImportRepository) DeleteManagedRootWithLog(ctx context.Context, rootFol
 			return fmt.Errorf("delete folders: %w", err)
 		}
 
+		if err := model.AdjustSystemStatsTx(tx, model.SystemStatsDelta{
+			TotalFiles:     -activeFiles.Count,
+			PendingReports: -pendingReports,
+		}); err != nil {
+			return fmt.Errorf("adjust deleted managed root system stats: %w", err)
+		}
+		for _, stat := range createdDayStats {
+			dayTime, err := time.Parse("2006-01-02", stat.Day)
+			if err != nil {
+				return fmt.Errorf("parse deleted file day: %w", err)
+			}
+			if err := model.AdjustDailyStatsTx(tx, dayTime, model.DailyStatsDelta{NewFiles: -stat.Count}); err != nil {
+				return fmt.Errorf("adjust deleted file daily stats: %w", err)
+			}
+		}
 		return createOperationLogTx(tx, logID, operatorID, "managed_directory_deleted", "folder", rootFolderID, detail, operatorIP, now)
 	})
 }

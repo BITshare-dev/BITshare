@@ -116,7 +116,7 @@ func TestCreateReportForFile(t *testing.T) {
 	if report.ReceiptCode != resp.ReceiptCode {
 		t.Fatalf("expected stored receipt code %q, got %q", resp.ReceiptCode, report.ReceiptCode)
 	}
-	if report.TargetName != file.Title || report.TargetType != "file" {
+	if report.TargetName != file.OriginalName || report.TargetType != "file" {
 		t.Fatalf("unexpected target snapshot: %q %q", report.TargetName, report.TargetType)
 	}
 	if report.FileID == nil || *report.FileID != file.ID {
@@ -131,13 +131,18 @@ func TestLookupReportReceiptCode(t *testing.T) {
 	engine := New(db, cfg, manager)
 
 	file := createActiveFile(t, db)
+	var folder model.Folder
+	if err := db.Where("id = ?", *file.FolderID).Take(&folder).Error; err != nil {
+		t.Fatalf("load file folder: %v", err)
+	}
 	now := time.Now().UTC()
 	reportID := mustNewID(t)
 	report := &model.Report{
 		ID:          reportID,
 		ReceiptCode: "RECEIPT66",
 		FileID:      &file.ID,
-		TargetName:  file.Title,
+		TargetName:  file.OriginalName,
+		TargetPath:  folder.Name + "/" + file.OriginalName,
 		TargetType:  "file",
 		Reason:      "copyright",
 		Description: "侵权内容",
@@ -161,9 +166,9 @@ func TestLookupReportReceiptCode(t *testing.T) {
 	var resp struct {
 		ReceiptCode string `json:"receipt_code"`
 		Items       []struct {
-			TargetName  string `json:"target_name"`
-			ReasonLabel string `json:"reason_label"`
-			Status      string `json:"status"`
+			TargetName string `json:"target_name"`
+			TargetPath string `json:"target_path"`
+			Status     string `json:"status"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
@@ -175,11 +180,11 @@ func TestLookupReportReceiptCode(t *testing.T) {
 	if len(resp.Items) != 1 {
 		t.Fatalf("expected 1 report item, got %d", len(resp.Items))
 	}
-	if resp.Items[0].TargetName != file.Title {
+	if resp.Items[0].TargetName != file.OriginalName {
 		t.Fatalf("unexpected target name %q", resp.Items[0].TargetName)
 	}
-	if resp.Items[0].ReasonLabel != "侵权" {
-		t.Fatalf("unexpected reason label %q", resp.Items[0].ReasonLabel)
+	if resp.Items[0].TargetPath != folder.Name+"/"+file.OriginalName {
+		t.Fatalf("unexpected target path %q", resp.Items[0].TargetPath)
 	}
 	if resp.Items[0].Status != string(model.ReportStatusPending) {
 		t.Fatalf("unexpected status %q", resp.Items[0].Status)
@@ -410,6 +415,9 @@ func TestAdminApproveReportMarksHandledWithoutOffliningResource(t *testing.T) {
 	if report.Status != model.ReportStatusApproved {
 		t.Fatalf("expected approved, got %q", report.Status)
 	}
+	if report.ReviewReason != "侵权内容已确认" {
+		t.Fatalf("unexpected stored review reason %q", report.ReviewReason)
+	}
 
 	// Verify file is still active
 	var updatedFile model.File
@@ -474,6 +482,9 @@ func TestAdminRejectReportKeepsResourceVisible(t *testing.T) {
 	}
 	if report.Status != model.ReportStatusRejected {
 		t.Fatalf("expected rejected, got %q", report.Status)
+	}
+	if report.ReviewReason != "经核实内容无误" {
+		t.Fatalf("unexpected stored review reason %q", report.ReviewReason)
 	}
 
 	// Verify file is still active

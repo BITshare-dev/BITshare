@@ -2,8 +2,8 @@
 import { onMounted, ref } from "vue";
 import { CalendarClock, Download, Files, Users } from "lucide-vue-next";
 
-import AdminSuperadminControls from "../../components/AdminSuperadminControls.vue";
-import StatCard from "../../components/StatCard.vue";
+import AdminSuperadminControls from "../../components/admin/AdminSuperadminControls.vue";
+import StatCard from "../../components/admin/StatCard.vue";
 import { httpClient } from "../../lib/http/client";
 import { useSessionStore } from "../../stores/session";
 
@@ -15,10 +15,10 @@ interface MetricItem {
 }
 
 interface DashboardStatsResponse {
-  total_visitor_ips: number;
+  total_visits: number;
   total_files: number;
   total_downloads: number;
-  recent_visitor_ips: number;
+  recent_visits: number;
   recent_files: number;
   recent_downloads: number;
 }
@@ -27,7 +27,7 @@ const sessionStore = useSessionStore();
 const loading = ref(true);
 const metrics = ref<MetricItem[]>([
   {
-    title: "总访问IP数",
+    title: "总访问数",
     value: "--",
     hint: "",
     icon: Users,
@@ -45,7 +45,7 @@ const metrics = ref<MetricItem[]>([
     icon: Download,
   },
   {
-    title: "近7天访问IP数",
+    title: "近7天访问数",
     value: "--",
     hint: "",
     icon: Users,
@@ -77,17 +77,17 @@ async function loadMetrics() {
 async function loadDashboardStats() {
   try {
     const response = await httpClient.get<DashboardStatsResponse>("/admin/dashboard/stats");
-    setMetric("总访问IP数", response.total_visitor_ips ?? 0);
+    setMetric("总访问数", response.total_visits ?? 0);
     setMetric("总资料数", response.total_files ?? 0);
     setMetric("总下载数", response.total_downloads ?? 0);
-    setMetric("近7天访问IP数", response.recent_visitor_ips ?? 0);
+    setMetric("近7天访问数", response.recent_visits ?? 0);
     setMetric("近7天新增资料数", response.recent_files ?? 0);
     setMetric("近7天下载数", response.recent_downloads ?? 0);
   } catch {
-    setMetric("总访问IP数", "--");
+    setMetric("总访问数", "--");
     setMetric("总资料数", "--");
     setMetric("总下载数", "--");
-    setMetric("近7天访问IP数", "--");
+    setMetric("近7天访问数", "--");
     setMetric("近7天新增资料数", "--");
     setMetric("近7天下载数", "--");
   }

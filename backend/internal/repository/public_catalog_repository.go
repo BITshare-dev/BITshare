@@ -23,18 +23,14 @@ type PublicFileListQuery struct {
 }
 
 type PublicFolderRow struct {
-	ID          string
-	ParentID    *string
-	Name        string
-	Description string
-	UpdatedAt   time.Time
-}
-
-type PublicFolderStatsRow struct {
-	FolderID       string
-	FileCount      int64
-	DownloadCount  int64
-	TotalSizeBytes int64
+	ID            string
+	ParentID      *string
+	Name          string
+	Description   string
+	UpdatedAt     time.Time
+	FileCount     int64
+	DownloadCount int64
+	TotalSize     int64
 }
 
 func NewPublicCatalogRepository(db *gorm.DB) *PublicCatalogRepository {
@@ -90,7 +86,7 @@ func (r *PublicCatalogRepository) FolderExists(ctx context.Context, folderID str
 func (r *PublicCatalogRepository) ListPublicFolders(ctx context.Context, parentID *string) ([]PublicFolderRow, error) {
 	query := r.db.WithContext(ctx).
 		Model(&model.Folder{}).
-		Select("id, parent_id, name, description, updated_at").
+		Select("id, parent_id, name, description, updated_at, file_count, download_count, total_size").
 		Where("status = ?", model.ResourceStatusActive)
 
 	if parentID == nil {
@@ -121,44 +117,4 @@ func (r *PublicCatalogRepository) FindPublicFolderByID(ctx context.Context, fold
 	}
 
 	return &folder, nil
-}
-
-func (r *PublicCatalogRepository) SummarizePublicFolders(ctx context.Context, folderIDs []string) (map[string]PublicFolderStatsRow, error) {
-	if len(folderIDs) == 0 {
-		return map[string]PublicFolderStatsRow{}, nil
-	}
-
-	var rows []PublicFolderStatsRow
-	query := `
-		WITH RECURSIVE folder_tree(root_id, id) AS (
-			SELECT id AS root_id, id
-			FROM folders
-			WHERE id IN ?
-			UNION ALL
-			SELECT folder_tree.root_id, folders.id
-			FROM folders
-			JOIN folder_tree ON folders.parent_id = folder_tree.id
-			WHERE folders.status = ?
-		)
-		SELECT
-			folder_tree.root_id AS folder_id,
-			COUNT(files.id) AS file_count,
-			COALESCE(SUM(files.download_count), 0) AS download_count,
-			COALESCE(SUM(files.size), 0) AS total_size_bytes
-		FROM folder_tree
-		LEFT JOIN files
-			ON files.folder_id = folder_tree.id
-			AND files.status = ?
-			AND files.deleted_at IS NULL
-		GROUP BY folder_tree.root_id
-	`
-	if err := r.db.WithContext(ctx).Raw(query, folderIDs, model.ResourceStatusActive, model.ResourceStatusActive).Scan(&rows).Error; err != nil {
-		return nil, fmt.Errorf("summarize public folders: %w", err)
-	}
-
-	result := make(map[string]PublicFolderStatsRow, len(rows))
-	for _, row := range rows {
-		result[row.FolderID] = row
-	}
-	return result, nil
 }

@@ -23,12 +23,30 @@ var managedModels = []any{
 	&model.SiteVisitEvent{},
 	&model.DownloadEvent{},
 	&model.SystemSetting{},
+	&model.SystemStat{},
+	&model.DailyStat{},
 }
 
 // EnsureSchema initializes the current baseline schema used by the application.
 func EnsureSchema(db *gorm.DB) error {
+	if err := rebuildDownloadEventsTableWithoutForeignKey(db); err != nil {
+		return fmt.Errorf("rebuild download events schema: %w", err)
+	}
 	if err := db.AutoMigrate(managedModels...); err != nil {
 		return fmt.Errorf("auto migrate schema: %w", err)
+	}
+	if err := db.Migrator().DropTable("site_visit_daily_uniques", "site_visitors"); err != nil {
+		return fmt.Errorf("drop legacy visit tables: %w", err)
+	}
+
+	if err := rebuildFolderStats(db); err != nil {
+		return fmt.Errorf("rebuild folder stats: %w", err)
+	}
+	if err := rebuildDashboardStats(db); err != nil {
+		return fmt.Errorf("rebuild dashboard stats: %w", err)
+	}
+	if err := normalizeReportReviewReasons(db); err != nil {
+		return fmt.Errorf("normalize report review reasons: %w", err)
 	}
 
 	// Drop old unique index on submissions.receipt_code if it exists.

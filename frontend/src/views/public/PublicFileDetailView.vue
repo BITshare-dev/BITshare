@@ -39,6 +39,7 @@ const deletePassword = ref("");
 const deleteSubmitting = ref(false);
 const deleteError = ref("");
 const feedbackModalOpen = ref(false);
+const feedbackSuccessModalOpen = ref(false);
 const feedbackDescription = ref("");
 const feedbackSubmitting = ref(false);
 const feedbackMessage = ref("");
@@ -138,6 +139,10 @@ function closeFeedbackModal() {
   feedbackModalOpen.value = false;
 }
 
+function closeFeedbackSuccessModal() {
+  feedbackSuccessModalOpen.value = false;
+}
+
 function closeDeleteDialog() {
   deleteDialogOpen.value = false;
   deletePassword.value = "";
@@ -217,6 +222,8 @@ async function submitFeedback() {
     feedbackMessage.value = `反馈已提交，请保存回执码 ${response.receipt_code}。`;
     currentReceiptCode.value = response.receipt_code;
     window.sessionStorage.setItem("openshare_receipt_code", response.receipt_code);
+    closeFeedbackModal();
+    feedbackSuccessModalOpen.value = true;
   } catch (err: unknown) {
     if (err instanceof HttpError && err.status === 400) {
       feedbackError.value = "请填写问题说明。";
@@ -361,7 +368,7 @@ function downloadFile() {
                 </button>
                 <button
                   type="button"
-                  class="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-white transition hover:bg-slate-800"
+                  class="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
                   aria-label="下载文件"
                   @click="downloadFile"
                 >
@@ -419,22 +426,44 @@ function downloadFile() {
 
     <Teleport to="body">
       <Transition name="modal-shell">
+      <div v-if="feedbackSuccessModalOpen" class="fixed inset-0 z-[120] bg-slate-950/40 backdrop-blur-sm">
+        <div class="flex min-h-screen items-center justify-center px-4 py-6">
+          <div class="modal-card w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div class="space-y-3">
+              <h3 class="text-lg font-semibold text-slate-900">提交成功</h3>
+              <p class="text-sm leading-6 text-slate-600">{{ feedbackMessage }}</p>
+            </div>
+            <div class="mt-6 flex justify-end">
+              <button type="button" class="btn-primary" @click="closeFeedbackSuccessModal">知道了</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="modal-shell">
       <div v-if="feedbackModalOpen && detail" class="fixed inset-0 z-[120] bg-slate-950/40 backdrop-blur-sm">
         <div class="flex min-h-screen items-center justify-center px-4 py-6">
           <div class="modal-card panel w-full max-w-2xl overflow-hidden p-6">
-            <div class="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
-              <div>
+            <div class="flex items-start justify-between gap-4 border-b border-slate-200 pb-5">
+              <div class="space-y-1">
                 <h3 class="text-lg font-semibold text-slate-900">反馈中心</h3>
+                <p class="text-sm text-slate-500">填写问题说明后提交，我们会尽快处理。</p>
               </div>
               <button type="button" class="btn-secondary" @click="closeFeedbackModal">关闭</button>
             </div>
 
-            <div class="mt-5 space-y-4">
-              <p class="text-sm text-slate-600">当前对象：{{ detail.original_name }}</p>
+            <div class="mt-6 space-y-5">
+              <div class="rounded-2xl border border-slate-200 bg-[#fafafafa] px-4 py-3">
+                <p class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">当前对象</p>
+                <p class="mt-1 text-sm leading-6 text-slate-700">{{ detail.original_name }}</p>
+              </div>
 
               <label class="space-y-2">
                 <span class="text-sm font-medium text-slate-700">回执码</span>
-                <div class="rounded-xl bg-slate-50 px-4 py-3">
+                <div class="rounded-2xl border border-slate-200 bg-[#fafafafa] px-4 py-3">
                   <p class="text-sm font-semibold tracking-[0.12em] text-slate-900">
                     {{ currentReceiptCode || "当前会话回执码暂未同步" }}
                   </p>
@@ -458,7 +487,7 @@ function downloadFile() {
                 {{ feedbackError }}
               </p>
 
-              <div class="flex justify-end gap-3">
+              <div class="flex justify-end gap-3 pt-1">
                 <button type="button" class="btn-secondary" @click="closeFeedbackModal">取消</button>
                 <button type="button" class="btn-primary" :disabled="feedbackSubmitDisabled" @click="submitFeedback">
                   {{ feedbackSubmitting ? "提交中…" : "提交反馈" }}

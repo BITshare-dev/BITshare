@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -108,6 +109,9 @@ func (s *PublicUploadService) CreateSubmission(ctx context.Context, input Public
 	rootFolderDisplayPath, err := s.folderDisplayPath(ctx, rootFolder)
 	if err != nil {
 		return nil, fmt.Errorf("resolve upload folder path: %w", err)
+	}
+	if err := s.resolveUploadFileNames(ctx, rootFolder, rootFolderDisplayPath, normalized.Files); err != nil {
+		return nil, err
 	}
 
 	receiptCode, err := s.resolveReceiptCode(ctx, normalized.ReceiptCode)
@@ -210,10 +214,19 @@ func (s *PublicUploadService) CreateSubmission(ctx context.Context, input Public
 				err = fmt.Errorf("move direct-publish upload: %w", moveErr)
 				break
 			}
+			finalTitle := strings.TrimSuffix(finalName, filepath.Ext(finalName))
+			if finalTitle == "" {
+				finalTitle = finalName
+			}
+
 			file.FolderID = &targetFolder.ID
 			file.Status = model.ResourceStatusActive
 			file.DiskPath = finalPath
 			file.StoredName = finalName
+			file.OriginalName = finalName
+			file.Title = finalTitle
+			submission.TitleSnapshot = finalTitle
+			submission.RelativePathSnapshot = joinSubmissionPath(rootFolderDisplayPath, buildRelativePath(entry.RelativeDir, finalName))
 			submission.Status = model.SubmissionStatusApproved
 			submission.ReviewedAt = &now
 		}
@@ -337,6 +350,144 @@ func (s *PublicUploadService) normalizeInput(input PublicUploadInput, policy Sys
 		DirectPublish: input.DirectPublish,
 		Files:         files,
 	}, nil
+}
+
+func (s *PublicUploadService) resolveUploadFileNames(
+	ctx context.Context,
+	rootFolder *model.Folder,
+	rootFolderDisplayPath string,
+	files []normalizedUploadFile,
+) error {
+	if rootFolder == nil || rootFolder.SourcePath == nil || strings.TrimSpace(*rootFolder.SourcePath) == "" {
+		return ErrUploadFolderNotFound
+	}
+
+	pendingPaths, err := s.repository.ListPendingRelativePathsByRootFolderID(ctx, rootFolder.ID)
+	if err != nil {
+		return fmt.Errorf("list pending upload paths: %w", err)
+	}
+
+	reservedByDir := make(map[string]map[string]struct{})
+	for _, pendingPath := range pendingPaths {
+		relativeToRoot := trimRootDisplayPath(rootFolderDisplayPath, pendingPath)
+		if relativeToRoot == "" {
+			continue
+		}
+		dir := repository.NormalizeRelativePathForStorage(filepath.ToSlash(filepath.Dir(relativeToRoot)))
+		name := filepath.Base(relativeToRoot)
+		if name == "" || name == "." {
+			continue
+		}
+		reserveFileName(reservedByDir, dir, name)
+	}
+
+	for index := range files {
+		entry := &files[index]
+		dirKey := repository.NormalizeRelativePathForStorage(entry.RelativeDir)
+		if err := s.seedReservedNamesFromDisk(reservedByDir, *rootFolder.SourcePath, dirKey); err != nil {
+			return err
+		}
+
+		finalName := nextUniqueFileName(reservedByDir, dirKey, entry.OriginalName)
+		entry.OriginalName = finalName
+		entry.Title = strings.TrimSuffix(finalName, filepath.Ext(finalName))
+		if entry.Title == "" {
+			entry.Title = finalName
+		}
+		entry.RelativePath = buildRelativePath(dirKey, finalName)
+	}
+
+	return nil
+}
+
+func (s *PublicUploadService) seedReservedNamesFromDisk(
+	reservedByDir map[string]map[string]struct{},
+	rootSourcePath string,
+	relativeDir string,
+) error {
+	if _, exists := reservedByDir[relativeDir]; exists {
+		return nil
+	}
+
+	reservedByDir[relativeDir] = make(map[string]struct{})
+	targetDir := rootSourcePath
+	if relativeDir != "" {
+		targetDir = filepath.Join(rootSourcePath, filepath.FromSlash(relativeDir))
+	}
+
+	entries, err := os.ReadDir(targetDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("inspect upload target directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		reservedByDir[relativeDir][strings.ToLower(entry.Name())] = struct{}{}
+	}
+	return nil
+}
+
+func reserveFileName(reservedByDir map[string]map[string]struct{}, relativeDir string, fileName string) {
+	if _, exists := reservedByDir[relativeDir]; !exists {
+		reservedByDir[relativeDir] = make(map[string]struct{})
+	}
+	reservedByDir[relativeDir][strings.ToLower(fileName)] = struct{}{}
+}
+
+func nextUniqueFileName(reservedByDir map[string]map[string]struct{}, relativeDir string, originalName string) string {
+	if _, exists := reservedByDir[relativeDir]; !exists {
+		reservedByDir[relativeDir] = make(map[string]struct{})
+	}
+
+	originalName = filepath.Base(strings.TrimSpace(originalName))
+	ext := filepath.Ext(originalName)
+	base := strings.TrimSuffix(originalName, ext)
+	if base == "" {
+		base = originalName
+	}
+
+	for index := 0; ; index++ {
+		candidate := originalName
+		if index > 0 {
+			candidate = base + "_" + strconv.Itoa(index) + ext
+		}
+		key := strings.ToLower(candidate)
+		if _, exists := reservedByDir[relativeDir][key]; exists {
+			continue
+		}
+		reservedByDir[relativeDir][key] = struct{}{}
+		return candidate
+	}
+}
+
+func buildRelativePath(relativeDir string, fileName string) string {
+	relativeDir = repository.NormalizeRelativePathForStorage(relativeDir)
+	fileName = repository.NormalizeRelativePathForStorage(fileName)
+	if relativeDir == "" {
+		return fileName
+	}
+	return relativeDir + "/" + fileName
+}
+
+func trimRootDisplayPath(rootDisplayPath string, fullPath string) string {
+	rootDisplayPath = repository.NormalizeRelativePathForStorage(rootDisplayPath)
+	fullPath = repository.NormalizeRelativePathForStorage(fullPath)
+	if rootDisplayPath == "" {
+		return fullPath
+	}
+	if fullPath == rootDisplayPath {
+		return ""
+	}
+	prefix := rootDisplayPath + "/"
+	if strings.HasPrefix(fullPath, prefix) {
+		return strings.TrimPrefix(fullPath, prefix)
+	}
+	return fullPath
 }
 
 func isIgnoredUploadFile(originalName string, relativePath string) bool {

@@ -2,7 +2,7 @@
 import { computed, onMounted } from "vue";
 import { RouterView, useRoute } from "vue-router";
 
-import Navbar from "../components/Navbar.vue";
+import Navbar from "../components/layout/Navbar.vue";
 import { httpClient } from "../lib/http/client";
 
 const route = useRoute();

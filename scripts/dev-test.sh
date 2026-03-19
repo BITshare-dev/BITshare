@@ -95,6 +95,17 @@ wait_for_http() {
   return 1
 }
 
+print_log_tail_if_exists() {
+  local log_file="$1"
+  local label="$2"
+
+  if [[ -f "$log_file" ]]; then
+    echo
+    echo "$label 日志尾部："
+    tail -n 80 "$log_file" || true
+  fi
+}
+
 cleanup() {
   local exit_code=$?
 
@@ -150,7 +161,7 @@ start_backend() {
 start_frontend() {
   (
     cd "$FRONTEND_DIR"
-    npm run dev -- --host 0.0.0.0 >"$FRONTEND_LOG" 2>&1
+    npm run dev -- --host 127.0.0.1 >"$FRONTEND_LOG" 2>&1
   ) &
   FRONTEND_PID=$!
 }
@@ -221,12 +232,18 @@ main() {
 
   print_step 4 "启动后端服务"
   start_backend
-  wait_for_http "http://127.0.0.1:8080/api/public/files" "后端"
+  if ! wait_for_http "http://127.0.0.1:8080/healthz" "后端"; then
+    print_log_tail_if_exists "$BACKEND_LOG" "后端"
+    exit 1
+  fi
   print_initial_admin_credentials
 
   print_step 5 "启动前端服务"
   start_frontend
-  wait_for_http "http://127.0.0.1:5173/" "前端"
+  if ! wait_for_http "http://127.0.0.1:5173/" "前端"; then
+    print_log_tail_if_exists "$FRONTEND_LOG" "前端"
+    exit 1
+  fi
 
   print_step 6 "输出测试入口与推荐流程"
   print_summary

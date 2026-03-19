@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 import { LayoutDashboard, Inbox, Megaphone, ScrollText, Shield, UserRound } from "lucide-vue-next";
 
-import AdminSidebar, { type AdminSidebarItem } from "../components/AdminSidebar.vue";
+import AdminSidebar, { type AdminSidebarItem } from "../components/admin/AdminSidebar.vue";
 import { HttpError, httpClient } from "../lib/http/client";
 import { useSessionStore } from "../stores/session";
 

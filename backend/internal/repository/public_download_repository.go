@@ -62,6 +62,13 @@ func (r *PublicDownloadRepository) FindActiveFolderByID(ctx context.Context, fol
 
 func (r *PublicDownloadRepository) IncrementDownloadCount(ctx context.Context, fileID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var file model.File
+		if err := tx.Select("id, folder_id").
+			Where("id = ? AND status = ?", fileID, model.ResourceStatusActive).
+			Take(&file).Error; err != nil {
+			return err
+		}
+
 		if err := tx.Model(&model.File{}).
 			Where("id = ?", fileID).
 			UpdateColumn("download_count", gorm.Expr("download_count + 1")).
@@ -74,11 +81,15 @@ func (r *PublicDownloadRepository) IncrementDownloadCount(ctx context.Context, f
 			return fmt.Errorf("generate download event id: %w", err)
 		}
 
-		return tx.Create(&model.DownloadEvent{
+		if err := tx.Create(&model.DownloadEvent{
 			ID:        eventID,
 			FileID:    fileID,
 			CreatedAt: time.Now().UTC(),
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+
+		return model.AdjustFolderStatsTx(tx, file.FolderID, 0, 1, 0)
 	})
 }
 
@@ -87,6 +98,14 @@ func (r *PublicDownloadRepository) IncrementDownloadCounts(ctx context.Context, 
 		return nil
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var files []model.File
+		if err := tx.Model(&model.File{}).
+			Select("id, folder_id").
+			Where("id IN ? AND status = ?", fileIDs, model.ResourceStatusActive).
+			Find(&files).Error; err != nil {
+			return err
+		}
+
 		if err := tx.Model(&model.File{}).
 			Where("id IN ?", fileIDs).
 			UpdateColumn("download_count", gorm.Expr("download_count + 1")).
@@ -108,7 +127,26 @@ func (r *PublicDownloadRepository) IncrementDownloadCounts(ctx context.Context, 
 			})
 		}
 
-		return tx.Create(&events).Error
+		if err := tx.Create(&events).Error; err != nil {
+			return err
+		}
+
+		downloadDeltaByFolder := make(map[string]int64)
+		for _, file := range files {
+			if file.FolderID == nil || strings.TrimSpace(*file.FolderID) == "" {
+				continue
+			}
+			downloadDeltaByFolder[strings.TrimSpace(*file.FolderID)]++
+		}
+
+		for folderID, delta := range downloadDeltaByFolder {
+			id := folderID
+			if err := model.AdjustFolderStatsTx(tx, &id, 0, delta, 0); err != nil {
+				return err
+			}
+		}
+
+		return nil
 	})
 }
 

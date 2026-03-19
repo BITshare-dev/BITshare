@@ -12,7 +12,8 @@ import (
 )
 
 type AdminManagementHandler struct {
-	service *service.AdminManagementService
+	service     *service.AdminManagementService
+	authService *service.AdminAuthService
 }
 
 type createAdminRequest struct {
@@ -28,8 +29,12 @@ type resetAdminPasswordRequest struct {
 	NewPassword string `json:"new_password"`
 }
 
-func NewAdminManagementHandler(service *service.AdminManagementService) *AdminManagementHandler {
-	return &AdminManagementHandler{service: service}
+type deleteAdminRequest struct {
+	Password string `json:"password"`
+}
+
+func NewAdminManagementHandler(service *service.AdminManagementService, authService *service.AdminAuthService) *AdminManagementHandler {
+	return &AdminManagementHandler{service: service, authService: authService}
 }
 
 func (h *AdminManagementHandler) ListAdmins(ctx *gin.Context) {
@@ -144,6 +149,25 @@ func (h *AdminManagementHandler) DeleteAdmin(ctx *gin.Context) {
 	identity, ok := session.GetAdminIdentity(ctx)
 	if !ok {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	if !identity.IsSuperAdmin() {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "super admin required"})
+		return
+	}
+
+	var req deleteAdminRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	if err := h.authService.VerifyPassword(ctx.Request.Context(), identity.AdminID, req.Password); err != nil {
+		switch {
+		case errors.Is(err, service.ErrInvalidAdminCredentials):
+			ctx.JSON(http.StatusUnauthorized, gin.H{"error": "invalid password"})
+		default:
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to verify password"})
+		}
 		return
 	}
 
