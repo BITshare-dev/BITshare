@@ -151,7 +151,7 @@ async function trackVisit() {
     <div v-else-if="!sessionStore.authenticated" class="app-container flex min-h-screen items-center justify-center py-10 sm:py-16">
       <section class="panel w-full max-w-[420px] p-5 sm:p-8">
         <div class="space-y-2">
-          <p class="text-sm font-semibold text-slate-600 dark:text-slate-400">OpenShare Admin</p>
+          <p class="text-sm font-semibold text-slate-600 dark:text-slate-400">BITshare Admin</p>
           <h2 class="text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">管理员登录</h2>
         </div>
 

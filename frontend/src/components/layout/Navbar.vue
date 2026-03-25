@@ -39,7 +39,7 @@ const props = withDefaults(
       { label: "回执查询", to: "/upload" },
     ],
     currentPath: "/",
-    githubHref: "https://github.com/zzzzquan/OpenShare",
+    githubHref: "https://github.com/BITshare-dev/BITshare",
   },
 );
 
@@ -163,12 +163,12 @@ function onPointerDown(event: PointerEvent) {
     <div class="app-container grid h-16 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 md:gap-4">
       <div class="min-w-0 flex items-center justify-start">
         <RouterLink to="/" class="inline-flex min-w-0 items-center gap-2 sm:gap-2.5">
-          <img src="/favicon.svg" alt="OpenShare" class="h-8 w-8" />
+          <img src="/favicon.svg" alt="BITshare" class="h-8 w-8" />
           <span
             class="truncate text-[15px] font-extrabold tracking-tight text-slate-900 dark:text-slate-100 sm:text-[16px]"
             style="font-family: 'Roboto Slab', serif"
           >
-            OpenShare
+            BITshare
           </span>
         </RouterLink>
       </div>
@@ -246,7 +246,7 @@ function onPointerDown(event: PointerEvent) {
             <template v-else>
               <div class="space-y-1">
                 <p class="text-sm font-semibold text-slate-900 dark:text-slate-100">管理员登录</p>
-                <p class="text-sm text-slate-500 dark:text-slate-400">输入标示ID和密码进入 OpenShare 后台。</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">输入标示ID和密码进入 BITshare 后台。</p>
               </div>
 
               <form class="mt-4 space-y-3" @submit.prevent="login">

@@ -42,7 +42,7 @@ async function trackVisit() {
     <Navbar
       :items="links"
       :current-path="route.path"
-      github-href="https://github.com/zzzzquan/OpenShare"
+      github-href="https://github.com/BITshare-dev/BITshare"
     />
 
     <main class="pt-16">
