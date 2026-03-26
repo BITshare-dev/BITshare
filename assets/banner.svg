@@ -36,10 +36,10 @@
 
   <!-- Typography: Centered visually with logo/divider -->
   <g transform="translate(420, 180)">
-    <!-- Main text "OpenShare" -->
+    <!-- Main text "BITshare" -->
     <text font-family="'Montserrat', 'Inter', 'Futura', 'Segoe UI', Arial, sans-serif" 
           font-size="120" font-weight="800" letter-spacing="-2">
-      <tspan fill="#1e293b">Open</tspan><tspan fill="#25b97c">Share</tspan>
+      <tspan fill="#1e293b">BIT</tspan><tspan fill="#25b97c">share</tspan>
     </text>
   </g>
 </svg>
