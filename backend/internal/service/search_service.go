@@ -435,30 +435,6 @@ func candidateToResultItem(candidate repository.SearchCandidate) SearchResultIte
 }
 
 // ---------------------------------------------------------------------------
-// Index sync public API (called by other services after mutations)
-// ---------------------------------------------------------------------------
-
-// IndexFile updates the FTS5 index for a single file.
-func (s *SearchService) IndexFile(ctx context.Context, fileID, title, description string) error {
-	return s.searchRepo.UpsertFileIndex(ctx, fileID, title, description)
-}
-
-// IndexFolder updates the FTS5 index for a single folder.
-func (s *SearchService) IndexFolder(ctx context.Context, folderID, name, description string) error {
-	return s.searchRepo.UpsertFolderIndex(ctx, folderID, name, description)
-}
-
-// RemoveFromIndex removes an entity from the FTS5 index.
-func (s *SearchService) RemoveFromIndex(ctx context.Context, entityType, entityID string) error {
-	return s.searchRepo.RemoveIndex(ctx, entityType, entityID)
-}
-
-// RebuildAllIndexes rebuilds the full FTS5 index from scratch.
-func (s *SearchService) RebuildAllIndexes(ctx context.Context) error {
-	return s.searchRepo.RebuildAllIndexes(ctx)
-}
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

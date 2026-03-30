@@ -1,8 +1,6 @@
 package router
 
 import (
-	"context"
-
 	"gorm.io/gorm"
 
 	"openshare/backend/internal/config"
@@ -51,23 +49,22 @@ func buildRouteServices(
 	systemSettingService := service.NewSystemSettingService(repos.systemSetting, cfg)
 	adminAuthService := service.NewAdminAuthService(db, repos.admin, sessionManager)
 	searchService := service.NewSearchService(repos.search, systemSettingService)
-	_ = searchService.RebuildAllIndexes(context.Background())
 
 	return &routeServices{
 		adminAuth:          adminAuthService,
 		adminDashboard:     service.NewAdminDashboardService(repos.adminDashboard),
 		announcement:       service.NewAnnouncementService(repos.announcement, repos.admin),
 		adminManagement:    service.NewAdminManagementService(repos.admin),
-		imports:            service.NewImportService(repos.imports, storageService, searchService),
-		moderation:         service.NewModerationService(repos.moderation, storageService, searchService),
+		imports:            service.NewImportService(repos.imports, storageService),
+		moderation:         service.NewModerationService(repos.moderation, storageService),
 		operationLog:       service.NewOperationLogService(repos.operationLog),
 		publicCatalog:      service.NewPublicCatalogService(repos.publicCatalog),
 		publicDownload:     service.NewPublicDownloadService(repos.publicDownload, storageService),
 		publicReceipt:      receiptCodeService,
 		publicSubmission:   service.NewPublicSubmissionService(repos.publicSubmission),
 		publicUpload:       service.NewPublicUploadService(cfg.Upload, repos.upload, receiptCodeService, storageService, systemSettingService),
-		report:             service.NewReportService(repos.report, receiptCodeService, searchService, storageService),
-		resourceManagement: service.NewResourceManagementServiceWithSettings(repos.resourceManagement, storageService, systemSettingService, searchService),
+		report:             service.NewReportService(repos.report, receiptCodeService),
+		resourceManagement: service.NewResourceManagementServiceWithSettings(repos.resourceManagement, storageService, systemSettingService),
 		search:             searchService,
 		siteVisit:          service.NewSiteVisitService(repos.siteVisit),
 		systemSetting:      systemSettingService,

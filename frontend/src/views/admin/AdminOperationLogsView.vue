@@ -82,6 +82,7 @@ function actionLabel(action: string) {
     report_approved: "处理反馈",
     report_rejected: "驳回反馈",
     local_import: "导入本地目录",
+    managed_directory_rescanned: "重新扫描托管目录",
     system_settings_updated: "更新系统设置",
     announcement_created: "创建公告",
     announcement_updated: "修改公告",
@@ -150,6 +151,11 @@ function summaryLabel(item: OperationLogItem) {
         return `导入本地目录：${String(parsed.root_path ?? "-")}`;
       }
       return "导入本地目录";
+    case "managed_directory_rescanned":
+      if (parsed) {
+        return `重新扫描托管目录：${String(parsed.root_path ?? "-")}`;
+      }
+      return "重新扫描托管目录";
     case "system_settings_updated":
       return "更新系统设置";
     case "announcement_created":
@@ -181,6 +187,18 @@ function detailLines(item: OperationLogItem) {
       `新增文件：${String(parsed.imported_files ?? 0)} 个`,
       `跳过目录：${String(parsed.skipped_folders ?? 0)} 个`,
       `跳过文件：${String(parsed.skipped_files ?? 0)} 个`,
+    ];
+  }
+
+  if (item.action === "managed_directory_rescanned" && parsed) {
+    return [
+      `扫描目录：${String(parsed.root_path ?? "-")}`,
+      `新增目录：${String(parsed.added_folders ?? 0)} 个`,
+      `新增文件：${String(parsed.added_files ?? 0)} 个`,
+      `更新目录：${String(parsed.updated_folders ?? 0)} 个`,
+      `更新文件：${String(parsed.updated_files ?? 0)} 个`,
+      `删除目录：${String(parsed.deleted_folders ?? 0)} 个`,
+      `删除文件：${String(parsed.deleted_files ?? 0)} 个`,
     ];
   }
 

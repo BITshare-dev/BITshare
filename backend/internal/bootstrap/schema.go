@@ -1,14 +1,11 @@
 package bootstrap
 
 import (
-	"errors"
 	"fmt"
-	"log"
 
 	"gorm.io/gorm"
 
 	"openshare/backend/internal/model"
-	"openshare/backend/internal/search"
 )
 
 var managedModels = []any{
@@ -54,16 +51,6 @@ func EnsureSchema(db *gorm.DB) error {
 	if db.Migrator().HasIndex(&model.Submission{}, "ux_submissions_receipt_code") {
 		if err := db.Migrator().DropIndex(&model.Submission{}, "ux_submissions_receipt_code"); err != nil {
 			return fmt.Errorf("drop old unique receipt_code index: %w", err)
-		}
-	}
-
-	// Initialize FTS5 virtual table for full-text search.
-	// FTS5 may not be available in all SQLite builds (e.g. pure-Go driver in tests).
-	if err := search.EnsureFTS5Schema(db); err != nil {
-		if errors.Is(err, search.ErrFTS5Unavailable) {
-			log.Println("[WARN] FTS5 module not available — full-text search disabled")
-		} else {
-			return fmt.Errorf("ensure FTS5 schema: %w", err)
 		}
 	}
 

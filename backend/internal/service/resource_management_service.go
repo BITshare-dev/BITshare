@@ -27,7 +27,6 @@ type ResourceManagementService struct {
 	repo     *repository.ResourceManagementRepository
 	storage  *storage.Service
 	settings *SystemSettingService
-	search   *SearchService
 	nowFunc  func() time.Time
 }
 
@@ -64,17 +63,16 @@ type UpdateManagedFolderDescriptionInput struct {
 	OperatorIP  string
 }
 
-func NewResourceManagementService(repo *repository.ResourceManagementRepository, storageService *storage.Service, searchService *SearchService) *ResourceManagementService {
+func NewResourceManagementService(repo *repository.ResourceManagementRepository, storageService *storage.Service) *ResourceManagementService {
 	return &ResourceManagementService{
 		repo:    repo,
 		storage: storageService,
-		search:  searchService,
 		nowFunc: func() time.Time { return time.Now().UTC() },
 	}
 }
 
-func NewResourceManagementServiceWithSettings(repo *repository.ResourceManagementRepository, storageService *storage.Service, settings *SystemSettingService, searchService *SearchService) *ResourceManagementService {
-	service := NewResourceManagementService(repo, storageService, searchService)
+func NewResourceManagementServiceWithSettings(repo *repository.ResourceManagementRepository, storageService *storage.Service, settings *SystemSettingService) *ResourceManagementService {
+	service := NewResourceManagementService(repo, storageService)
 	service.settings = settings
 	return service
 }
@@ -136,9 +134,6 @@ func (s *ResourceManagementService) UpdateFile(ctx context.Context, fileID strin
 		}
 		return fmt.Errorf("update managed file: %w", err)
 	}
-	if s.search != nil {
-		_ = s.search.IndexFile(ctx, fileID, title, description)
-	}
 	return nil
 }
 
@@ -180,9 +175,6 @@ func (s *ResourceManagementService) UpdateFolderDescription(ctx context.Context,
 				return ErrManagedFolderNotFound
 			}
 			return fmt.Errorf("update folder metadata: %w", err)
-		}
-		if s.search != nil {
-			_ = s.search.IndexFolder(ctx, folderID, name, description)
 		}
 		return nil
 	}
@@ -255,9 +247,6 @@ func (s *ResourceManagementService) UpdateFolderDescription(ctx context.Context,
 		}
 		return fmt.Errorf("update folder tree paths: %w", err)
 	}
-	if s.search != nil {
-		_ = s.search.RebuildAllIndexes(ctx)
-	}
 	return nil
 }
 
@@ -323,9 +312,6 @@ func (s *ResourceManagementService) DeleteFile(ctx context.Context, fileID strin
 		}
 		return fmt.Errorf("delete managed file: %w", err)
 	}
-	if s.search != nil {
-		_ = s.search.RemoveFromIndex(ctx, "file", current.ID)
-	}
 	return nil
 }
 
@@ -364,9 +350,6 @@ func (s *ResourceManagementService) DeleteFolder(ctx context.Context, folderID s
 			return ErrManagedFolderNotFound
 		}
 		return fmt.Errorf("delete managed folder: %w", err)
-	}
-	if s.search != nil {
-		_ = s.search.RebuildAllIndexes(ctx)
 	}
 	return nil
 }

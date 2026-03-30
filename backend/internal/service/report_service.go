@@ -9,7 +9,6 @@ import (
 
 	"openshare/backend/internal/model"
 	"openshare/backend/internal/repository"
-	"openshare/backend/internal/storage"
 	"openshare/backend/pkg/identity"
 )
 
@@ -18,13 +17,13 @@ import (
 // ---------------------------------------------------------------------------
 
 var (
-	ErrReportNotFound       = errors.New("report not found")
-	ErrReportNotPending     = errors.New("report is not pending")
-	ErrReportReasonRequired = errors.New("report reason is required")
+	ErrReportNotFound            = errors.New("report not found")
+	ErrReportNotPending          = errors.New("report is not pending")
+	ErrReportReasonRequired      = errors.New("report reason is required")
 	ErrReportDescriptionRequired = errors.New("report description is required")
-	ErrReportReasonInvalid  = errors.New("invalid report reason")
-	ErrReportTargetRequired = errors.New("exactly one of file_id or folder_id is required")
-	ErrReportTargetNotFound = errors.New("reported resource not found or already offline")
+	ErrReportReasonInvalid       = errors.New("invalid report reason")
+	ErrReportTargetRequired      = errors.New("exactly one of file_id or folder_id is required")
+	ErrReportTargetNotFound      = errors.New("reported resource not found or already offline")
 )
 
 // validReportReasons maps the allowed reason codes to human-readable labels.
@@ -45,7 +44,7 @@ type ReportService struct {
 	nowFunc      func() time.Time
 }
 
-func NewReportService(repo *repository.ReportRepository, receiptCodes *ReceiptCodeService, _ *SearchService, _ *storage.Service) *ReportService {
+func NewReportService(repo *repository.ReportRepository, receiptCodes *ReceiptCodeService) *ReportService {
 	return &ReportService{
 		repo:         repo,
 		receiptCodes: receiptCodes,

@@ -27,7 +27,6 @@ var (
 type ModerationService struct {
 	repository *repository.ModerationRepository
 	storage    *storage.Service
-	search     *SearchService
 	nowFunc    func() time.Time
 }
 
@@ -53,11 +52,10 @@ type ReviewResult struct {
 	RejectReason string                 `json:"reject_reason,omitempty"`
 }
 
-func NewModerationService(repository *repository.ModerationRepository, storageService *storage.Service, searchService *SearchService) *ModerationService {
+func NewModerationService(repository *repository.ModerationRepository, storageService *storage.Service) *ModerationService {
 	return &ModerationService{
 		repository: repository,
 		storage:    storageService,
-		search:     searchService,
 		nowFunc:    func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -157,11 +155,6 @@ func (s *ModerationService) ApproveSubmission(ctx context.Context, submissionID 
 			return nil, fmt.Errorf("approve submission failed (%v); rollback failed: %w", err, rollbackErr)
 		}
 		return nil, fmt.Errorf("approve submission: %w", err)
-	}
-
-	// Update FTS5 search index for the newly approved file.
-	if s.search != nil {
-		_ = s.search.IndexFile(ctx, record.File.ID, record.File.Title, record.File.Description)
 	}
 
 	return &ReviewResult{

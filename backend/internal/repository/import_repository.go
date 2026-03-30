@@ -37,6 +37,74 @@ type FolderTreeFileRow struct {
 	DownloadCount int64
 }
 
+type ManagedRootRow struct {
+	ID         string
+	SourcePath *string
+}
+
+type ManagedSubtreeFolderRow struct {
+	ID          string
+	ParentID    *string
+	Name        string
+	Description string
+	SourcePath  *string
+	Status      model.ResourceStatus
+	CreatedAt   time.Time
+}
+
+type ManagedSubtreeFileRow struct {
+	ID            string
+	FolderID      *string
+	SubmissionID  *string
+	SourcePath    *string
+	DiskPath      string
+	Title         string
+	Description   string
+	OriginalName  string
+	StoredName    string
+	Extension     string
+	MimeType      string
+	Size          int64
+	DownloadCount int64
+	Status        model.ResourceStatus
+	CreatedAt     time.Time
+}
+
+type ManagedFolderUpdate struct {
+	ID         string
+	ParentID   *string
+	Name       string
+	SourcePath string
+}
+
+type ManagedFileUpdate struct {
+	ID           string
+	FolderID     *string
+	SourcePath   string
+	DiskPath     string
+	Title        string
+	Description  string
+	OriginalName string
+	StoredName   string
+	Extension    string
+	MimeType     string
+	Size         int64
+}
+
+type RescanSyncInput struct {
+	RootFolderID     string
+	OperatorID       string
+	OperatorIP       string
+	Detail           string
+	Now              time.Time
+	AddedFolders     []*model.Folder
+	UpdatedFolders   []ManagedFolderUpdate
+	DeletedFolderIDs []string
+	AddedFiles       []*model.File
+	UpdatedFiles     []ManagedFileUpdate
+	DeletedFileIDs   []string
+}
+
 func NewImportRepository(db *gorm.DB) *ImportRepository {
 	return &ImportRepository{db: db}
 }
@@ -51,6 +119,20 @@ func (r *ImportRepository) FindFolderBySourcePath(ctx context.Context, sourcePat
 		return nil, fmt.Errorf("find folder by source path: %w", err)
 	}
 	return &folder, nil
+}
+
+func (r *ImportRepository) ListManagedRoots(ctx context.Context) ([]ManagedRootRow, error) {
+	var rows []ManagedRootRow
+	if err := r.db.WithContext(ctx).
+		Model(&model.Folder{}).
+		Select("id, source_path").
+		Where("parent_id IS NULL").
+		Where("source_path IS NOT NULL AND TRIM(source_path) <> ''").
+		Order("source_path ASC").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list managed roots: %w", err)
+	}
+	return rows, nil
 }
 
 func (r *ImportRepository) FindFileBySourcePath(ctx context.Context, sourcePath string) (*model.File, error) {
@@ -159,6 +241,148 @@ func (r *ImportRepository) FindFolderByID(ctx context.Context, folderID string) 
 		return nil, fmt.Errorf("find folder by id: %w", err)
 	}
 	return &folder, nil
+}
+
+func (r *ImportRepository) ListManagedSubtreeFolders(ctx context.Context, rootFolderID string) ([]ManagedSubtreeFolderRow, error) {
+	query := `
+		WITH RECURSIVE folder_tree(id, parent_id, name, description, source_path, status, created_at) AS (
+			SELECT id, parent_id, name, description, source_path, status, created_at
+			FROM folders
+			WHERE id = ?
+			UNION ALL
+			SELECT folders.id, folders.parent_id, folders.name, folders.description, folders.source_path, folders.status, folders.created_at
+			FROM folders
+			JOIN folder_tree ON folders.parent_id = folder_tree.id
+		)
+		SELECT id, parent_id, name, description, source_path, status, created_at
+		FROM folder_tree
+	`
+
+	var rows []ManagedSubtreeFolderRow
+	if err := r.db.WithContext(ctx).Raw(query, rootFolderID).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list managed subtree folders: %w", err)
+	}
+	return rows, nil
+}
+
+func (r *ImportRepository) ListManagedSubtreeFiles(ctx context.Context, rootFolderID string) ([]ManagedSubtreeFileRow, error) {
+	query := `
+		WITH RECURSIVE folder_tree(id) AS (
+			SELECT id
+			FROM folders
+			WHERE id = ?
+			UNION ALL
+			SELECT folders.id
+			FROM folders
+			JOIN folder_tree ON folders.parent_id = folder_tree.id
+		)
+		SELECT
+			files.id,
+			files.folder_id,
+			files.submission_id,
+			files.source_path,
+			files.disk_path,
+			files.title,
+			files.description,
+			files.original_name,
+			files.stored_name,
+			files.extension,
+			files.mime_type,
+			files.size,
+			files.download_count,
+			files.status,
+			files.created_at
+		FROM files
+		JOIN folder_tree ON files.folder_id = folder_tree.id
+	`
+
+	var rows []ManagedSubtreeFileRow
+	if err := r.db.WithContext(ctx).Raw(query, rootFolderID).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list managed subtree files: %w", err)
+	}
+	return rows, nil
+}
+
+func (r *ImportRepository) ApplyRescanSync(ctx context.Context, input RescanSyncInput) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(input.DeletedFileIDs) > 0 || len(input.DeletedFolderIDs) > 0 {
+			if err := deleteManagedReportsTx(tx, input.DeletedFileIDs, input.DeletedFolderIDs); err != nil {
+				return err
+			}
+			if len(input.DeletedFileIDs) > 0 {
+				if err := tx.Where("id IN ?", input.DeletedFileIDs).Delete(&model.File{}).Error; err != nil {
+					return fmt.Errorf("delete rescanned files: %w", err)
+				}
+			}
+			if len(input.DeletedFolderIDs) > 0 {
+				if err := tx.Where("id IN ?", input.DeletedFolderIDs).Delete(&model.Folder{}).Error; err != nil {
+					return fmt.Errorf("delete rescanned folders: %w", err)
+				}
+			}
+		}
+
+		for _, update := range input.UpdatedFolders {
+			if err := tx.Model(&model.Folder{}).
+				Where("id = ?", update.ID).
+				Updates(map[string]any{
+					"parent_id":   update.ParentID,
+					"name":        update.Name,
+					"source_path": update.SourcePath,
+					"status":      model.ResourceStatusActive,
+					"deleted_at":  nil,
+					"updated_at":  input.Now,
+				}).Error; err != nil {
+				return fmt.Errorf("update rescanned folder %s: %w", update.ID, err)
+			}
+		}
+
+		for _, folder := range input.AddedFolders {
+			if err := tx.Create(folder).Error; err != nil {
+				return fmt.Errorf("create rescanned folder %s: %w", folder.ID, err)
+			}
+		}
+
+		for _, update := range input.UpdatedFiles {
+			if err := tx.Model(&model.File{}).
+				Where("id = ?", update.ID).
+				Updates(map[string]any{
+					"folder_id":     update.FolderID,
+					"source_path":   update.SourcePath,
+					"disk_path":     update.DiskPath,
+					"title":         update.Title,
+					"description":   update.Description,
+					"original_name": update.OriginalName,
+					"stored_name":   update.StoredName,
+					"extension":     update.Extension,
+					"mime_type":     update.MimeType,
+					"size":          update.Size,
+					"status":        model.ResourceStatusActive,
+					"deleted_at":    nil,
+					"updated_at":    input.Now,
+				}).Error; err != nil {
+				return fmt.Errorf("update rescanned file %s: %w", update.ID, err)
+			}
+		}
+
+		for _, file := range input.AddedFiles {
+			if err := tx.Create(file).Error; err != nil {
+				return fmt.Errorf("create rescanned file %s: %w", file.ID, err)
+			}
+		}
+
+		if err := model.RebuildFolderStatsTx(tx); err != nil {
+			return fmt.Errorf("rebuild folder stats after rescan: %w", err)
+		}
+		if err := model.RebuildDashboardStatsTx(tx); err != nil {
+			return fmt.Errorf("rebuild dashboard stats after rescan: %w", err)
+		}
+
+		logID, err := identity.NewID()
+		if err != nil {
+			return fmt.Errorf("generate rescan operation log id: %w", err)
+		}
+		return createOperationLogTx(tx, logID, input.OperatorID, "managed_directory_rescanned", "folder", input.RootFolderID, input.Detail, input.OperatorIP, input.Now)
+	})
 }
 
 func (r *ImportRepository) DeleteManagedRootWithLog(ctx context.Context, rootFolderID, operatorID, operatorIP, detail, logID string, now time.Time) error {
@@ -271,4 +495,30 @@ func (r *ImportRepository) DeleteManagedRootWithLog(ctx context.Context, rootFol
 		}
 		return createOperationLogTx(tx, logID, operatorID, "managed_directory_deleted", "folder", rootFolderID, detail, operatorIP, now)
 	})
+}
+
+func deleteManagedReportsTx(tx *gorm.DB, fileIDs []string, folderIDs []string) error {
+	if tx == nil {
+		return nil
+	}
+
+	switch {
+	case len(fileIDs) > 0 && len(folderIDs) > 0:
+		if err := tx.Where("file_id IN ?", fileIDs).Delete(&model.Report{}).Error; err != nil {
+			return fmt.Errorf("delete rescanned file reports: %w", err)
+		}
+		if err := tx.Where("folder_id IN ?", folderIDs).Delete(&model.Report{}).Error; err != nil {
+			return fmt.Errorf("delete rescanned folder reports: %w", err)
+		}
+	case len(fileIDs) > 0:
+		if err := tx.Where("file_id IN ?", fileIDs).Delete(&model.Report{}).Error; err != nil {
+			return fmt.Errorf("delete rescanned file reports: %w", err)
+		}
+	case len(folderIDs) > 0:
+		if err := tx.Where("folder_id IN ?", folderIDs).Delete(&model.Report{}).Error; err != nil {
+			return fmt.Errorf("delete rescanned folder reports: %w", err)
+		}
+	}
+
+	return nil
 }

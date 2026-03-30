@@ -18,15 +18,6 @@ func NewSearchHandler(service *service.SearchService) *SearchHandler {
 	return &SearchHandler{service: service}
 }
 
-// RebuildIndex handles POST /api/admin/search/rebuild-index
-func (h *SearchHandler) RebuildIndex(ctx *gin.Context) {
-	if err := h.service.RebuildAllIndexes(ctx.Request.Context()); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to rebuild search index"})
-		return
-	}
-	ctx.JSON(http.StatusOK, gin.H{"status": "ok"})
-}
-
 // Search handles GET /api/public/search
 //
 //	Query parameters:

@@ -99,9 +99,9 @@ func registerAdminRoutes(api *gin.RouterGroup, handlers *routeHandlers) {
 		handlers.imports.DeleteManagedDirectory,
 	)
 	adminProtected.POST(
-		"/search/rebuild-index",
+		"/imports/local/:folderID/rescan",
 		middleware.RequireAdminPermission(model.AdminPermissionManageSystem),
-		handlers.search.RebuildIndex,
+		handlers.imports.RescanManagedDirectory,
 	)
 	adminProtected.GET("/folders/tree", handlers.imports.GetFolderTree)
 	adminProtected.GET("/resources/files", handlers.resourceManagement.ListFiles)

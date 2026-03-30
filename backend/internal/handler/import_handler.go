@@ -61,11 +61,40 @@ func (h *ImportHandler) ImportLocalDirectory(ctx *gin.Context) {
 		OperatorIP: ctx.ClientIP(),
 	})
 	if err != nil {
+		var conflictErr *service.ManagedDirectoryConflictError
 		switch {
 		case errors.Is(err, service.ErrInvalidImportPath):
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid import path"})
+		case errors.As(err, &conflictErr):
+			ctx.JSON(http.StatusConflict, gin.H{"error": conflictErr.Error()})
 		default:
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to import local directory"})
+		}
+		return
+	}
+
+	ctx.JSON(http.StatusOK, result)
+}
+
+func (h *ImportHandler) RescanManagedDirectory(ctx *gin.Context) {
+	identity, ok := session.GetAdminIdentity(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+
+	result, err := h.service.RescanManagedDirectory(ctx.Request.Context(), ctx.Param("folderID"), identity.AdminID, ctx.ClientIP())
+	if err != nil {
+		var unavailableErr *service.ManagedDirectoryUnavailableError
+		switch {
+		case errors.Is(err, service.ErrFolderTreeNotFound):
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "folder not found"})
+		case errors.Is(err, service.ErrManagedRootRequired):
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "managed root folder required"})
+		case errors.As(err, &unavailableErr):
+			ctx.JSON(http.StatusConflict, gin.H{"error": unavailableErr.Error()})
+		default:
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to rescan managed directory"})
 		}
 		return
 	}

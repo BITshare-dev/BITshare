@@ -56,6 +56,9 @@ const deletingFolderID = ref("");
 const deletePassword = ref("");
 const deleteError = ref("");
 const deleteMessage = ref("");
+const rescanningFolderID = ref("");
+const rescanError = ref("");
+const rescanMessage = ref("");
 const uploadSizeValue = ref(5);
 const uploadSizeUnit = ref<"B" | "KB" | "MB" | "GB">("GB");
 const guestSnapshot = ref("");
@@ -245,6 +248,30 @@ const filteredImportItems = computed(() => {
     return true;
   });
 });
+const importPathConflict = computed(() => {
+  const selectedPath = normalizeManagedRootClientPath(importPath.value);
+  if (!selectedPath) {
+    return "";
+  }
+
+  for (const folder of managedFolders.value) {
+    const existingPath = normalizeManagedRootClientPath(folder.sourcePath);
+    if (!existingPath) {
+      continue;
+    }
+    if (selectedPath === existingPath) {
+      return "该目录已托管，请使用“重新扫描”。";
+    }
+    if (isManagedRootClientChild(selectedPath, existingPath)) {
+      return "该目录位于已托管目录内，请对上级托管目录执行“重新扫描”。";
+    }
+    if (isManagedRootClientChild(existingPath, selectedPath)) {
+      return "该目录包含已托管目录，不能重复导入父目录。";
+    }
+  }
+
+  return "";
+});
 
 async function loadDirectories(path: string, options?: { silent?: boolean }) {
   importLoading.value = true;
@@ -349,6 +376,10 @@ async function importDirectory() {
     importError.value = "请先选择服务器目录。";
     return;
   }
+  if (importPathConflict.value) {
+    importError.value = importPathConflict.value;
+    return;
+  }
   importLoading.value = true;
   importError.value = "";
   importMessage.value = "";
@@ -362,11 +393,36 @@ async function importDirectory() {
     importMessage.value = `导入完成：${response.imported_folders} 个目录，${response.imported_files} 个文件。`;
     confirmedImportPath.value = "";
     importPath.value = "";
-    window.location.reload();
+    await loadManagedFolders();
   } catch (err: unknown) {
     importError.value = readApiError(err, "导入目录失败。");
   } finally {
     importLoading.value = false;
+  }
+}
+
+async function rescanManagedFolder(folderID: string) {
+  rescanningFolderID.value = folderID;
+  rescanError.value = "";
+  rescanMessage.value = "";
+  try {
+    const response = await httpClient.post<{
+      added_folders: number;
+      added_files: number;
+      updated_folders: number;
+      updated_files: number;
+      deleted_folders: number;
+      deleted_files: number;
+    }>(`/admin/imports/local/${encodeURIComponent(folderID)}/rescan`);
+    rescanMessage.value =
+      `重新扫描完成：新增目录 ${response.added_folders} 个，新增文件 ${response.added_files} 个，` +
+      `更新目录 ${response.updated_folders} 个，更新文件 ${response.updated_files} 个，` +
+      `删除目录 ${response.deleted_folders} 个，删除文件 ${response.deleted_files} 个。`;
+    await loadManagedFolders();
+  } catch (err: unknown) {
+    rescanError.value = readApiError(err, "重新扫描托管目录失败。");
+  } finally {
+    rescanningFolderID.value = "";
   }
 }
 
@@ -402,6 +458,14 @@ async function confirmDeleteManagedFolder(folderID: string) {
   } catch (err: unknown) {
     deleteError.value = readApiError(err, "删除托管目录失败。");
   }
+}
+
+function normalizeManagedRootClientPath(value: string) {
+  return value.trim().replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+function isManagedRootClientChild(path: string, root: string) {
+  return path !== root && path.startsWith(`${root}/`);
 }
 </script>
 
@@ -440,14 +504,24 @@ async function confirmDeleteManagedFolder(folderID: string) {
                 <p class="text-sm font-medium text-slate-900">{{ folder.name }}</p>
                 <p class="mt-1 break-all text-sm text-slate-500">{{ folder.sourcePath || "未记录源目录" }}</p>
               </div>
-              <button
-                type="button"
-                class="inline-flex h-11 shrink-0 items-center justify-center rounded-xl bg-rose-600 px-5 text-sm font-medium text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
-                :disabled="managedFoldersLoading"
-                @click="beginDeleteManagedFolder(folder.id)"
-              >
-                删除
-              </button>
+              <div class="flex shrink-0 items-center gap-3">
+                <button
+                  type="button"
+                  class="inline-flex h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="managedFoldersLoading || rescanningFolderID === folder.id"
+                  @click="rescanManagedFolder(folder.id)"
+                >
+                  {{ rescanningFolderID === folder.id ? "扫描中…" : "重新扫描" }}
+                </button>
+                <button
+                  type="button"
+                  class="inline-flex h-11 items-center justify-center rounded-xl bg-rose-600 px-5 text-sm font-medium text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="managedFoldersLoading || rescanningFolderID === folder.id"
+                  @click="beginDeleteManagedFolder(folder.id)"
+                >
+                  删除
+                </button>
+              </div>
             </div>
             <div v-if="deletingFolderID === folder.id" class="mt-4 space-y-3 rounded-xl border border-rose-200 bg-white px-4 py-4">
               <p class="text-sm text-rose-700">该操作会删除此托管目录及其关联文件、下载记录和反馈记录。</p>
@@ -459,6 +533,8 @@ async function confirmDeleteManagedFolder(folderID: string) {
             </div>
           </div>
         </div>
+        <p v-if="rescanMessage" class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ rescanMessage }}</p>
+        <p v-if="rescanError" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ rescanError }}</p>
         <p v-if="deleteMessage" class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ deleteMessage }}</p>
         <p v-if="deleteError" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ deleteError }}</p>
       </SurfaceCard>
@@ -512,12 +588,13 @@ async function confirmDeleteManagedFolder(folderID: string) {
             <p class="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">已选目录</p>
             <p class="mt-2 break-all text-sm text-slate-700">{{ importPath || "尚未选择服务器目录" }}</p>
           </div>
+          <p v-if="importPathConflict" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">{{ importPathConflict }}</p>
         </div>
         <div class="space-y-3">
           <button type="button" class="btn-secondary w-full" :disabled="importLoading" @click="openDirectoryPicker">
             选择服务器目录
           </button>
-          <button type="button" class="btn-primary w-full" :disabled="importLoading || !confirmedImportPath.trim()" @click="importDirectory">
+          <button type="button" class="btn-primary w-full" :disabled="importLoading || !confirmedImportPath.trim() || !!importPathConflict" @click="importDirectory">
             {{ importLoading ? "导入中…" : "确认导入" }}
           </button>
         </div>
