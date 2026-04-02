@@ -15,13 +15,13 @@ type PublicSubmissionRepository struct {
 }
 
 type SubmissionLookupRow struct {
-	ReceiptCode   string
-	TitleSnapshot string
-	RelativePath  string
-	Status        model.SubmissionStatus
-	RejectReason  string
-	CreatedAt     time.Time
-	DownloadCount int64
+	ReceiptCode  string
+	FolderID     *string `gorm:"column:folder_id"`
+	Name         string
+	RelativePath string
+	Status       model.SubmissionStatus
+	ReviewReason string `gorm:"column:review_reason"`
+	CreatedAt    time.Time
 }
 
 func NewPublicSubmissionRepository(db *gorm.DB) *PublicSubmissionRepository {
@@ -33,18 +33,14 @@ func (r *PublicSubmissionRepository) FindAllByReceiptCode(ctx context.Context, r
 	err := r.db.WithContext(ctx).
 		Table("submissions").
 		Select(`
-			submissions.receipt_code AS receipt_code,
-			submissions.title_snapshot AS title_snapshot,
-			submissions.relative_path_snapshot AS relative_path,
-			submissions.status AS status,
-			submissions.reject_reason AS reject_reason,
-			submissions.created_at AS created_at,
-			COALESCE((
-				SELECT MAX(files.download_count)
-				FROM files
-				WHERE files.submission_id = submissions.id
-			), 0) AS download_count
-		`).
+				submissions.receipt_code AS receipt_code,
+				submissions.folder_id AS folder_id,
+				submissions.name AS name,
+				submissions.relative_path AS relative_path,
+				submissions.status AS status,
+				submissions.review_reason AS review_reason,
+				submissions.created_at AS created_at
+			`).
 		Where("submissions.receipt_code = ?", receiptCode).
 		Order("submissions.created_at DESC").
 		Find(&rows).
@@ -54,4 +50,8 @@ func (r *PublicSubmissionRepository) FindAllByReceiptCode(ctx context.Context, r
 	}
 
 	return rows, nil
+}
+
+func (r *PublicSubmissionRepository) BuildFolderDisplayPath(ctx context.Context, folderID *string) (string, error) {
+	return BuildFolderDisplayPath(ctx, r.db, folderID)
 }

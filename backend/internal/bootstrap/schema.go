@@ -13,7 +13,7 @@ var managedModels = []any{
 	&model.Folder{},
 	&model.File{},
 	&model.Submission{},
-	&model.Report{},
+	&model.Feedback{},
 	&model.Announcement{},
 	&model.OperationLog{},
 	&model.AdminSession{},
@@ -29,6 +29,15 @@ func EnsureSchema(db *gorm.DB) error {
 	if err := rebuildDownloadEventsTableWithoutForeignKey(db); err != nil {
 		return fmt.Errorf("rebuild download events schema: %w", err)
 	}
+	if err := migrateManagedFilesSchema(db); err != nil {
+		return fmt.Errorf("migrate files schema: %w", err)
+	}
+	if err := migrateSubmissionsSchema(db); err != nil {
+		return fmt.Errorf("migrate submissions schema: %w", err)
+	}
+	if err := migrateFeedbacksSchema(db); err != nil {
+		return fmt.Errorf("migrate feedbacks schema: %w", err)
+	}
 	if err := db.AutoMigrate(managedModels...); err != nil {
 		return fmt.Errorf("auto migrate schema: %w", err)
 	}
@@ -41,9 +50,6 @@ func EnsureSchema(db *gorm.DB) error {
 	}
 	if err := rebuildDashboardStats(db); err != nil {
 		return fmt.Errorf("rebuild dashboard stats: %w", err)
-	}
-	if err := normalizeReportReviewReasons(db); err != nil {
-		return fmt.Errorf("normalize report review reasons: %w", err)
 	}
 
 	// Drop old unique index on submissions.receipt_code if it exists.

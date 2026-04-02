@@ -18,8 +18,6 @@ func TestPublicSubmissionLookupByReceiptCode(t *testing.T) {
 	engine := New(db, cfg, newRouterSessionManager(db))
 
 	submission := createPendingSubmissionForTest(t, db, "RECEIPT88")
-	createFileForSubmission(t, db, submission.ID, 23)
-
 	request := httptest.NewRequest(http.MethodGet, "/api/public/submissions/RECEIPT88", nil)
 	recorder := httptest.NewRecorder()
 
@@ -32,10 +30,9 @@ func TestPublicSubmissionLookupByReceiptCode(t *testing.T) {
 	var response struct {
 		ReceiptCode string `json:"receipt_code"`
 		Items       []struct {
-			Title         string `json:"title"`
-			Status        string `json:"status"`
-			DownloadCount int64  `json:"download_count"`
-			RejectReason  string `json:"reject_reason"`
+			Name         string `json:"name"`
+			Status       string `json:"status"`
+			ReviewReason string `json:"review_reason"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
@@ -48,14 +45,11 @@ func TestPublicSubmissionLookupByReceiptCode(t *testing.T) {
 	if len(response.Items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(response.Items))
 	}
-	if response.Items[0].Title != submission.TitleSnapshot {
-		t.Fatalf("unexpected title %q", response.Items[0].Title)
+	if response.Items[0].Name != submission.Name {
+		t.Fatalf("unexpected name %q", response.Items[0].Name)
 	}
 	if response.Items[0].Status != string(model.SubmissionStatusPending) {
 		t.Fatalf("unexpected status %q", response.Items[0].Status)
-	}
-	if response.Items[0].DownloadCount != 23 {
-		t.Fatalf("unexpected download_count %d", response.Items[0].DownloadCount)
 	}
 }
 
@@ -94,10 +88,8 @@ func TestPublicSubmissionLookupReturnsMultipleItems(t *testing.T) {
 	db := newRouterTestDB(t)
 	engine := New(db, cfg, newRouterSessionManager(db))
 
-	sub1 := createPendingSubmissionForTest(t, db, "SHARED99")
-	createFileForSubmission(t, db, sub1.ID, 5)
-	sub2 := createPendingSubmissionForTest(t, db, "SHARED99")
-	createFileForSubmission(t, db, sub2.ID, 10)
+	createPendingSubmissionForTest(t, db, "SHARED99")
+	createPendingSubmissionForTest(t, db, "SHARED99")
 
 	request := httptest.NewRequest(http.MethodGet, "/api/public/submissions/SHARED99", nil)
 	recorder := httptest.NewRecorder()
@@ -111,7 +103,7 @@ func TestPublicSubmissionLookupReturnsMultipleItems(t *testing.T) {
 	var response struct {
 		ReceiptCode string `json:"receipt_code"`
 		Items       []struct {
-			Title string `json:"title"`
+			Name string `json:"name"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
@@ -131,22 +123,19 @@ func createFileForSubmission(t *testing.T, db *gorm.DB, submissionID string, dow
 
 	file := &model.File{
 		ID:            mustNewID(t),
-		SubmissionID:  &submissionID,
-		Title:         "existing",
-		OriginalName:  "existing.pdf",
-		StoredName:    mustNewID(t) + ".pdf",
-		Extension:     ".pdf",
+		Name:          "existing.pdf",
+		Extension:     "pdf",
 		MimeType:      "application/pdf",
 		Size:          1024,
-		DiskPath:      "/tmp/existing.pdf",
-		Status:        model.ResourceStatusOffline,
 		DownloadCount: downloadCount,
-		UploaderIP:    "127.0.0.1",
 		CreatedAt:     time.Date(2026, 3, 12, 10, 0, 0, 0, time.UTC),
 		UpdatedAt:     time.Date(2026, 3, 12, 10, 0, 0, 0, time.UTC),
 	}
 	if err := db.Create(file).Error; err != nil {
 		t.Fatalf("create file for submission failed: %v", err)
+	}
+	if err := db.Model(&model.Submission{}).Where("id = ?", submissionID).Update("file_id", file.ID).Error; err != nil {
+		t.Fatalf("link file to submission failed: %v", err)
 	}
 	return file
 }

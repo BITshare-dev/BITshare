@@ -10,10 +10,6 @@ import (
 const GlobalSystemStatsKey = "global"
 
 func (f *File) AfterCreate(tx *gorm.DB) error {
-	if f.Status != ResourceStatusActive {
-		return nil
-	}
-
 	if err := AdjustFolderStatsTx(tx, f.FolderID, f.Size, f.DownloadCount, 1); err != nil {
 		return err
 	}
@@ -32,11 +28,11 @@ func (submission *Submission) AfterCreate(tx *gorm.DB) error {
 	return AdjustSystemStatsTx(tx, SystemStatsDelta{PendingSubmissions: 1})
 }
 
-func (report *Report) AfterCreate(tx *gorm.DB) error {
-	if report.Status != ReportStatusPending {
+func (feedback *Feedback) AfterCreate(tx *gorm.DB) error {
+	if feedback.Status != FeedbackStatusPending {
 		return nil
 	}
-	return AdjustSystemStatsTx(tx, SystemStatsDelta{PendingReports: 1})
+	return AdjustSystemStatsTx(tx, SystemStatsDelta{PendingFeedbacks: 1})
 }
 
 func (event *DownloadEvent) AfterCreate(tx *gorm.DB) error {
@@ -55,7 +51,7 @@ type SystemStatsDelta struct {
 	TotalFiles         int64
 	TotalDownloads     int64
 	PendingSubmissions int64
-	PendingReports     int64
+	PendingFeedbacks   int64
 }
 
 type DailyStatsDelta struct {
@@ -79,7 +75,7 @@ func AdjustSystemStatsTx(tx *gorm.DB, delta SystemStatsDelta) error {
 		TotalFiles:         delta.TotalFiles,
 		TotalDownloads:     delta.TotalDownloads,
 		PendingSubmissions: delta.PendingSubmissions,
-		PendingReports:     delta.PendingReports,
+		PendingFeedbacks:   delta.PendingFeedbacks,
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}
@@ -90,7 +86,7 @@ func AdjustSystemStatsTx(tx *gorm.DB, delta SystemStatsDelta) error {
 			"total_files":         gorm.Expr("total_files + ?", delta.TotalFiles),
 			"total_downloads":     gorm.Expr("total_downloads + ?", delta.TotalDownloads),
 			"pending_submissions": gorm.Expr("pending_submissions + ?", delta.PendingSubmissions),
-			"pending_reports":     gorm.Expr("pending_reports + ?", delta.PendingReports),
+			"pending_feedbacks":   gorm.Expr("pending_feedbacks + ?", delta.PendingFeedbacks),
 			"updated_at":          now,
 		}),
 	}).Create(&row).Error

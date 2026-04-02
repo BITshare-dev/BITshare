@@ -9,7 +9,7 @@
     "root": "/data/openshare"
   },
   "upload": {
-    "max_file_size_bytes": 5368709120
+    "max_upload_total_bytes": 5368709120
   },
   "session": {
     "secret": "change-me-before-production",

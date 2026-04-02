@@ -21,7 +21,7 @@ type AdminDashboardStats struct {
 	RecentFiles        int64 `json:"recent_files"`
 	RecentDownloads    int64 `json:"recent_downloads"`
 	PendingSubmissions int64 `json:"pending_submissions"`
-	PendingReports     int64 `json:"pending_reports"`
+	PendingFeedbacks   int64 `json:"pending_feedbacks"`
 	PendingAuditCount  int64 `json:"pending_audit_count"`
 }
 
@@ -47,7 +47,7 @@ func (s *AdminDashboardService) GetStats(ctx context.Context) (*AdminDashboardSt
 		RecentFiles:        row.RecentFiles,
 		RecentDownloads:    row.RecentDownloads,
 		PendingSubmissions: row.PendingSubmissions,
-		PendingReports:     row.PendingReports,
-		PendingAuditCount:  row.PendingSubmissions + row.PendingReports,
+		PendingFeedbacks:   row.PendingFeedbacks,
+		PendingAuditCount:  row.PendingSubmissions + row.PendingFeedbacks,
 	}, nil
 }

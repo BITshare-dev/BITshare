@@ -9,17 +9,22 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"openshare/backend/internal/model"
 	"openshare/backend/internal/service"
-	"openshare/backend/internal/session"
 )
 
 var (
 	errUploadFormParse        = errors.New("failed to parse upload form")
+	errUploadBodyTooLarge     = errors.New("upload request body too large")
 	errUploadManifestInvalid  = errors.New("invalid upload manifest")
 	errUploadManifestMismatch = errors.New("upload files do not match manifest")
 	errUploadFileRequired     = errors.New("file is required")
 	errUploadFileRead         = errors.New("failed to read uploaded file")
+	errUploadTotalTooLarge    = errors.New("upload total size too large")
+)
+
+const (
+	minUploadRequestOverheadBytes = 1 << 20
+	maxUploadRequestOverheadBytes = 32 << 20
 )
 
 type uploadManifestEntry struct {
@@ -38,16 +43,26 @@ func (r *parsedPublicUploadRequest) Close() {
 }
 
 func (h *PublicUploadHandler) parseSubmissionRequest(ctx *gin.Context) (*parsedPublicUploadRequest, error) {
-	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, h.currentMaxRequestBytes(ctx.Request.Context()))
+	maxUploadTotalBytes := h.service.MaxUploadTotalBytes(ctx.Request.Context())
+	if maxUploadTotalBytes > 0 {
+		ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, requestBodyLimit(maxUploadTotalBytes))
+	}
 
 	form, err := ctx.MultipartForm()
 	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return nil, errUploadBodyTooLarge
+		}
 		return nil, errUploadFormParse
 	}
 
 	fileHeaders, manifest, err := extractUploadFiles(form, ctx.PostForm("manifest"))
 	if err != nil {
 		return nil, err
+	}
+	if maxUploadTotalBytes > 0 && totalUploadBytes(fileHeaders) > maxUploadTotalBytes {
+		return nil, errUploadTotalTooLarge
 	}
 
 	files := make([]service.PublicUploadFileInput, 0, len(fileHeaders))
@@ -60,21 +75,19 @@ func (h *PublicUploadHandler) parseSubmissionRequest(ctx *gin.Context) (*parsedP
 		}
 		closers = append(closers, file)
 		files = append(files, service.PublicUploadFileInput{
-			OriginalName: fileHeader.Filename,
+			Name:         fileHeader.Filename,
 			RelativePath: manifest[index].RelativePath,
-			DeclaredMIME: fileHeader.Header.Get("Content-Type"),
 			File:         file,
 		})
 	}
 
 	return &parsedPublicUploadRequest{
 		input: service.PublicUploadInput{
-			Description:   ctx.PostForm("description"),
-			ReceiptCode:   readPublicReceiptCode(ctx),
-			FolderID:      ctx.PostForm("folder_id"),
-			UploaderIP:    ctx.ClientIP(),
-			DirectPublish: canDirectPublish(ctx),
-			Files:         files,
+			Description: ctx.PostForm("description"),
+			ReceiptCode: readPublicReceiptCode(ctx),
+			FolderID:    ctx.PostForm("folder_id"),
+			UploaderIP:  ctx.ClientIP(),
+			Files:       files,
 		},
 		closers: closers,
 	}, nil
@@ -106,12 +119,30 @@ func extractUploadFiles(form *multipart.Form, manifestRaw string) ([]*multipart.
 	return fileHeaders, manifest, nil
 }
 
-func canDirectPublish(ctx *gin.Context) bool {
-	identity, ok := session.GetAdminIdentity(ctx)
-	if !ok {
-		return false
+func requestBodyLimit(maxUploadTotalBytes int64) int64 {
+	if maxUploadTotalBytes <= 0 {
+		return 0
 	}
-	return identity.HasPermission(model.AdminPermissionSubmissionModeration)
+
+	overhead := maxUploadTotalBytes / 100
+	if overhead < minUploadRequestOverheadBytes {
+		overhead = minUploadRequestOverheadBytes
+	}
+	if overhead > maxUploadRequestOverheadBytes {
+		overhead = maxUploadRequestOverheadBytes
+	}
+	return maxUploadTotalBytes + overhead
+}
+
+func totalUploadBytes(fileHeaders []*multipart.FileHeader) int64 {
+	var total int64
+	for _, fileHeader := range fileHeaders {
+		if fileHeader == nil || fileHeader.Size <= 0 {
+			continue
+		}
+		total += fileHeader.Size
+	}
+	return total
 }
 
 func closeClosers(closers []io.Closer) {

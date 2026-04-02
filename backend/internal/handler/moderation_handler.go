@@ -14,7 +14,8 @@ type ModerationHandler struct {
 	service *service.ModerationService
 }
 
-type rejectSubmissionRequest struct {
+type reviewSubmissionRequest struct {
+	ReviewReason string `json:"review_reason"`
 	RejectReason string `json:"reject_reason"`
 }
 
@@ -64,17 +65,22 @@ func (h *ModerationHandler) RejectSubmission(ctx *gin.Context) {
 		return
 	}
 
-	var req rejectSubmissionRequest
+	var req reviewSubmissionRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
-	result, err := h.service.RejectSubmission(ctx.Request.Context(), ctx.Param("submissionID"), identity.AdminID, ctx.ClientIP(), req.RejectReason)
+	reviewReason := req.ReviewReason
+	if reviewReason == "" {
+		reviewReason = req.RejectReason
+	}
+
+	result, err := h.service.RejectSubmission(ctx.Request.Context(), ctx.Param("submissionID"), identity.AdminID, ctx.ClientIP(), reviewReason)
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrRejectReasonRequired):
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "reject_reason is required"})
+		case errors.Is(err, service.ErrSubmissionReviewReasonRequired):
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "review_reason is required"})
 		case errors.Is(err, service.ErrSubmissionMissing):
 			ctx.JSON(http.StatusNotFound, gin.H{"error": "submission not found"})
 		case errors.Is(err, service.ErrSubmissionNotPending):

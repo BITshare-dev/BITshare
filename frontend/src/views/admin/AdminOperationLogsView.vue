@@ -76,11 +76,10 @@ function actionLabel(action: string) {
     admin_profile_updated: "更新账号资料",
     submission_approved: "通过上传审核",
     submission_rejected: "驳回上传审核",
+    feedback_approved: "处理反馈",
+    feedback_rejected: "驳回反馈",
     resource_updated: "更新资料信息",
-    resource_offlined: "下架资料",
-    resource_deleted: "删除资料",
-    report_approved: "处理反馈",
-    report_rejected: "驳回反馈",
+    resource_deleted: "移入回收站",
     local_import: "导入本地目录",
     managed_directory_rescanned: "重新扫描托管目录",
     system_settings_updated: "更新系统设置",
@@ -95,9 +94,9 @@ function targetTypeLabel(targetType: string) {
   const labels: Record<string, string> = {
     admin: "管理员",
     announcement: "公告",
+    feedback: "反馈",
     file: "资料",
     folder: "目录",
-    report: "反馈",
     submission: "上传记录",
     system_setting: "系统设置",
   };
@@ -136,16 +135,14 @@ function summaryLabel(item: OperationLogItem) {
       return `通过上传审核${detail ? `：${detail}` : ""}`;
     case "submission_rejected":
       return `驳回上传审核${detail ? `：${detail}` : ""}`;
-    case "report_approved":
+    case "feedback_approved":
       return `处理反馈：${objectName}${detail ? `，处理意见：${detail}` : ""}`;
-    case "report_rejected":
-      return `驳回反馈记录：${objectName}${detail ? `，处理说明：${detail}` : ""}`;
+    case "feedback_rejected":
+      return `驳回反馈：${objectName}${detail ? `，处理说明：${detail}` : ""}`;
     case "resource_updated":
       return `更新资料信息${detail ? `：${detail}` : ""}`;
-    case "resource_offlined":
-      return `下架资料${detail ? `：${detail}` : ""}`;
     case "resource_deleted":
-      return `删除资料${detail ? `：${detail}` : ""}`;
+      return `移入回收站${detail ? `：${detail}` : ""}`;
     case "local_import":
       if (parsed) {
         return `导入本地目录：${String(parsed.root_path ?? "-")}`;

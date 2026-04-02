@@ -9,7 +9,6 @@ import (
 	"time"
 	"unicode"
 
-	"openshare/backend/internal/config"
 	"openshare/backend/internal/repository"
 )
 
@@ -42,13 +41,11 @@ const (
 //   - application-side relevance ranking
 type SearchService struct {
 	searchRepo *repository.SearchRepository
-	settings   *SystemSettingService
 }
 
-func NewSearchService(searchRepo *repository.SearchRepository, settings *SystemSettingService) *SearchService {
+func NewSearchService(searchRepo *repository.SearchRepository) *SearchService {
 	return &SearchService{
 		searchRepo: searchRepo,
-		settings:   settings,
 	}
 }
 
@@ -77,7 +74,6 @@ type SearchResultItem struct {
 	EntityType    string     `json:"entity_type"` // "file" | "folder"
 	ID            string     `json:"id"`
 	Name          string     `json:"name"`
-	OriginalName  string     `json:"original_name,omitempty"`
 	Extension     string     `json:"extension,omitempty"`
 	Size          int64      `json:"size,omitempty"`
 	DownloadCount int64      `json:"download_count,omitempty"`
@@ -89,7 +85,7 @@ type SearchResultItem struct {
 // ---------------------------------------------------------------------------
 
 func (s *SearchService) Search(ctx context.Context, input SearchInput) (*SearchResult, error) {
-	policy := s.searchPolicy(ctx)
+	policy := defaultSearchPolicy()
 
 	// --- 1. Validate & normalise -----------------------------------------
 	page, pageSize, err := normalizeSearchPagination(input.Page, input.PageSize, policy.ResultWindow)
@@ -167,16 +163,18 @@ func (s *SearchService) Search(ctx context.Context, input SearchInput) (*SearchR
 	}, nil
 }
 
-func (s *SearchService) searchPolicy(ctx context.Context) SearchPolicy {
-	if s.settings == nil {
-		return defaultSystemPolicy(config.UploadConfig{}).Search
-	}
+type searchPolicy struct {
+	EnableFuzzyMatch  bool
+	EnableFolderScope bool
+	ResultWindow      int
+}
 
-	policy, err := s.settings.GetPolicy(ctx)
-	if err != nil || policy == nil {
-		return defaultSystemPolicy(config.UploadConfig{}).Search
+func defaultSearchPolicy() searchPolicy {
+	return searchPolicy{
+		EnableFuzzyMatch:  true,
+		EnableFolderScope: true,
+		ResultWindow:      100,
 	}
-	return policy.Search
 }
 
 // ---------------------------------------------------------------------------
@@ -312,9 +310,6 @@ func rankSearchCandidates(candidates []repository.SearchCandidate, query normali
 
 func scoreSearchCandidate(candidate repository.SearchCandidate, query normalizedSearchQuery, scopeFolderID string) int {
 	primaryFields := []string{normalizeSearchField(candidate.Name)}
-	if original := normalizeSearchField(candidate.OriginalName); original != "" {
-		primaryFields = append(primaryFields, original)
-	}
 	description := normalizeSearchField(candidate.Description)
 
 	score := bestFieldMatchScore(query.Full, primaryFields, 1200, 920, 720)
@@ -405,9 +400,6 @@ func downloadCountBias(downloadCount int64) int {
 }
 
 func searchDisplayName(candidate repository.SearchCandidate) string {
-	if candidate.EntityType == "file" && strings.TrimSpace(candidate.OriginalName) != "" {
-		return strings.ToLower(candidate.OriginalName)
-	}
 	return strings.ToLower(candidate.Name)
 }
 
@@ -419,7 +411,6 @@ func candidateToResultItem(candidate repository.SearchCandidate) SearchResultIte
 			EntityType:    "file",
 			ID:            candidate.ID,
 			Name:          candidate.Name,
-			OriginalName:  candidate.OriginalName,
 			Extension:     candidate.Extension,
 			Size:          candidate.Size,
 			DownloadCount: candidate.DownloadCount,

@@ -74,7 +74,7 @@ func TestApproveSubmissionMovesFileAndUpdatesStatus(t *testing.T) {
 			model.AdminPermissionReviewSubmissions,
 		},
 	})
-	submission, file := createPendingModerationRecord(t, cfg, db, "APPROVE01")
+	submission, stagingPath := createPendingModerationRecord(t, cfg, db, "APPROVE01")
 	manager := newRouterSessionManager(db)
 	engine := New(db, cfg, manager)
 
@@ -102,19 +102,23 @@ func TestApproveSubmissionMovesFileAndUpdatesStatus(t *testing.T) {
 	}
 
 	var updatedFile model.File
-	if err := db.Where("id = ?", file.ID).Take(&updatedFile).Error; err != nil {
+	if updatedSubmission.FileID == nil {
+		t.Fatal("expected approved submission to link to a managed file")
+	}
+	if err := db.Where("id = ?", *updatedSubmission.FileID).Take(&updatedFile).Error; err != nil {
 		t.Fatalf("reload file failed: %v", err)
 	}
-	if updatedFile.Status != model.ResourceStatusActive {
-		t.Fatalf("expected active file status, got %q", updatedFile.Status)
+	if updatedFile.Name != "math.pdf" {
+		t.Fatalf("expected file name %q, got %q", "math.pdf", updatedFile.Name)
 	}
-	if updatedFile.StoredName != "math.pdf" {
-		t.Fatalf("expected stored name %q, got %q", "math.pdf", updatedFile.StoredName)
+	var targetFolder model.Folder
+	if err := db.Where("id = ?", *updatedFile.FolderID).Take(&targetFolder).Error; err != nil {
+		t.Fatalf("reload target folder failed: %v", err)
 	}
-	if _, err := os.Stat(updatedFile.DiskPath); err != nil {
+	if _, err := os.Stat(model.BuildManagedFilePath(targetFolder.SourcePath, updatedFile.Name)); err != nil {
 		t.Fatalf("expected file to exist in folder directory: %v", err)
 	}
-	if _, err := os.Stat(file.DiskPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(stagingPath); !os.IsNotExist(err) {
 		t.Fatalf("expected staged file to be moved, stat err=%v", err)
 	}
 
@@ -138,7 +142,7 @@ func TestRejectSubmissionDeletesStagedFileAndStoresReason(t *testing.T) {
 			model.AdminPermissionReviewSubmissions,
 		},
 	})
-	submission, file := createPendingModerationRecord(t, cfg, db, "REJECT01")
+	submission, stagingPath := createPendingModerationRecord(t, cfg, db, "REJECT01")
 	manager := newRouterSessionManager(db)
 	engine := New(db, cfg, manager)
 
@@ -147,7 +151,7 @@ func TestRejectSubmissionDeletesStagedFileAndStoresReason(t *testing.T) {
 		t.Fatalf("create session failed: %v", err)
 	}
 
-	body := bytes.NewBufferString(`{"reject_reason":"文件内容不完整"}`)
+	body := bytes.NewBufferString(`{"review_reason":"文件内容不完整"}`)
 	request := httptest.NewRequest(http.MethodPost, "/api/admin/submissions/"+submission.ID+"/reject", body)
 	request.Header.Set("Content-Type", "application/json")
 	request.AddCookie(&http.Cookie{Name: manager.CookieName(), Value: cookieValue, Path: "/"})
@@ -166,19 +170,21 @@ func TestRejectSubmissionDeletesStagedFileAndStoresReason(t *testing.T) {
 	if updatedSubmission.Status != model.SubmissionStatusRejected {
 		t.Fatalf("expected rejected status, got %q", updatedSubmission.Status)
 	}
-	if updatedSubmission.RejectReason != "文件内容不完整" {
-		t.Fatalf("unexpected reject reason %q", updatedSubmission.RejectReason)
+	if updatedSubmission.ReviewReason != "文件内容不完整" {
+		t.Fatalf("unexpected review reason %q", updatedSubmission.ReviewReason)
 	}
-	if _, err := os.Stat(file.DiskPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(stagingPath); !os.IsNotExist(err) {
 		t.Fatalf("expected staged file to be deleted, stat err=%v", err)
 	}
-
-	var updatedFile model.File
-	if err := db.Where("id = ?", file.ID).Take(&updatedFile).Error; err != nil {
-		t.Fatalf("reload file failed: %v", err)
+	if updatedSubmission.StagingPath != "" {
+		t.Fatalf("expected rejected submission staging path to be cleared, got %q", updatedSubmission.StagingPath)
 	}
-	if updatedFile.DiskPath != "" {
-		t.Fatalf("expected rejected file disk path to be cleared, got %q", updatedFile.DiskPath)
+	var approvedFileCount int64
+	if err := db.Model(&model.Submission{}).Where("file_id IS NOT NULL").Count(&approvedFileCount).Error; err != nil {
+		t.Fatalf("count approved files failed: %v", err)
+	}
+	if approvedFileCount != 0 {
+		t.Fatalf("expected no file row for rejected submission, got %d", approvedFileCount)
 	}
 
 	var logCount int64
@@ -190,7 +196,7 @@ func TestRejectSubmissionDeletesStagedFileAndStoresReason(t *testing.T) {
 	}
 }
 
-func createPendingModerationRecord(t *testing.T, cfg config.Config, db *gorm.DB, receiptCode string) (*model.Submission, *model.File) {
+func createPendingModerationRecord(t *testing.T, cfg config.Config, db *gorm.DB, receiptCode string) (*model.Submission, string) {
 	t.Helper()
 
 	now := time.Date(2026, 3, 12, 12, 0, 0, 0, time.UTC)
@@ -212,7 +218,6 @@ func createPendingModerationRecord(t *testing.T, cfg config.Config, db *gorm.DB,
 		ID:         folderID,
 		Name:       "test-folder",
 		SourcePath: &sourcePath,
-		Status:     model.ResourceStatusActive,
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
@@ -221,39 +226,24 @@ func createPendingModerationRecord(t *testing.T, cfg config.Config, db *gorm.DB,
 	}
 
 	submission := &model.Submission{
-		ID:                  submissionID,
-		ReceiptCode:         receiptCode,
-		TitleSnapshot:       "离散数学",
-		DescriptionSnapshot: "待审核",
-		Status:              model.SubmissionStatusPending,
-		UploaderIP:          "127.0.0.1",
-		CreatedAt:           now,
-		UpdatedAt:           now,
+		ID:           submissionID,
+		ReceiptCode:  receiptCode,
+		FolderID:     &folderID,
+		Name:         "math.pdf",
+		Description:  "待审核",
+		RelativePath: "math.pdf",
+		Extension:    ".pdf",
+		MimeType:     "application/pdf",
+		Size:         1024,
+		StagingPath:  stagingPath,
+		Status:       model.SubmissionStatusPending,
+		UploaderIP:   "127.0.0.1",
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 	if err := db.Create(submission).Error; err != nil {
 		t.Fatalf("create submission failed: %v", err)
 	}
 
-	file := &model.File{
-		ID:            mustNewID(t),
-		FolderID:      &folderID,
-		SubmissionID:  &submissionID,
-		Title:         submission.TitleSnapshot,
-		OriginalName:  "math.pdf",
-		StoredName:    storedName,
-		Extension:     ".pdf",
-		MimeType:      "application/pdf",
-		Size:          1024,
-		DiskPath:      stagingPath,
-		Status:        model.ResourceStatusOffline,
-		DownloadCount: 0,
-		UploaderIP:    "127.0.0.1",
-		CreatedAt:     now,
-		UpdatedAt:     now,
-	}
-	if err := db.Create(file).Error; err != nil {
-		t.Fatalf("create file failed: %v", err)
-	}
-
-	return submission, file
+	return submission, stagingPath
 }

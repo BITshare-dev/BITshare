@@ -24,10 +24,7 @@
     "trash": "trash"
   },
   "upload": {
-    "max_file_size_bytes": 5368709120,
-    "allowed_extensions": [],
-    "allowed_mime_types": [],
-    "max_title_length": 200,
+    "max_upload_total_bytes": 5368709120,
     "max_description_length": 4000,
     "receipt_code_length": 12
   },

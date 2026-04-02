@@ -15,29 +15,23 @@ import (
 	"openshare/backend/pkg/identity"
 )
 
-func TestPublicFilesListsAllActiveFiles(t *testing.T) {
+func TestPublicHotFilesListsMostDownloadedFiles(t *testing.T) {
 	cfg := newRouterTestConfig(t)
 	db := newRouterTestDB(t)
 	folderID := createPublicTestFolder(t, db, "导入资料")
 	createPublicTestFile(t, db, publicTestFile{
 		title:         "公开文件",
-		status:        model.ResourceStatusActive,
 		downloadCount: 7,
 		size:          128,
 	})
 	createPublicTestFile(t, db, publicTestFile{
-		title:  "下架文件",
-		status: model.ResourceStatusOffline,
-	})
-	createPublicTestFile(t, db, publicTestFile{
 		title:    "目录内文件",
-		status:   model.ResourceStatusActive,
 		folderID: &folderID,
 		size:     256,
 	})
 
 	engine := New(db, cfg, newRouterSessionManager(db))
-	request := httptest.NewRequest(http.MethodGet, "/api/public/files", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/public/files/hot?limit=10", nil)
 	recorder := httptest.NewRecorder()
 
 	engine.ServeHTTP(recorder, request)
@@ -48,53 +42,37 @@ func TestPublicFilesListsAllActiveFiles(t *testing.T) {
 
 	var response struct {
 		Items []struct {
-			Title string `json:"title"`
+			Name string `json:"name"`
 		} `json:"items"`
-		Total int `json:"total"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode response failed: %v", err)
 	}
 
-	// Both root and folder files should appear when no folder_id filter
-	if response.Total != 2 {
-		t.Fatalf("expected total 2 (root + folder), got %d", response.Total)
-	}
 	if len(response.Items) != 2 {
 		t.Fatalf("expected 2 items, got %d", len(response.Items))
 	}
 
-	var rootItem *struct {
-		Title string `json:"title"`
-	}
-	for i := range response.Items {
-		if response.Items[i].Title == "公开文件" {
-			rootItem = &response.Items[i]
-			break
-		}
-	}
-	if rootItem == nil {
-		t.Fatal("root file not found in response")
+	if response.Items[0].Name != "公开文件.pdf" || response.Items[1].Name != "目录内文件.pdf" {
+		t.Fatalf("unexpected hot files order: %+v", response.Items)
 	}
 }
 
-func TestPublicFilesSupportsFolderBrowsing(t *testing.T) {
+func TestPublicFolderFilesSupportsFolderBrowsing(t *testing.T) {
 	cfg := newRouterTestConfig(t)
 	db := newRouterTestDB(t)
 	folderID := createPublicTestFolder(t, db, "课程资料")
 	createPublicTestFile(t, db, publicTestFile{
 		title:    "根目录文件",
-		status:   model.ResourceStatusActive,
 		folderID: nil,
 	})
 	createPublicTestFile(t, db, publicTestFile{
 		title:    "目录内文件",
-		status:   model.ResourceStatusActive,
 		folderID: &folderID,
 	})
 
 	engine := New(db, cfg, newRouterSessionManager(db))
-	request := httptest.NewRequest(http.MethodGet, "/api/public/files?folder_id="+folderID, nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/public/folders/"+folderID+"/files", nil)
 	recorder := httptest.NewRecorder()
 
 	engine.ServeHTTP(recorder, request)
@@ -105,42 +83,39 @@ func TestPublicFilesSupportsFolderBrowsing(t *testing.T) {
 
 	var response struct {
 		Items []struct {
-			Title string `json:"title"`
+			Name string `json:"name"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode response failed: %v", err)
 	}
 
-	if len(response.Items) != 1 || response.Items[0].Title != "目录内文件" {
+	if len(response.Items) != 1 || response.Items[0].Name != "目录内文件.pdf" {
 		t.Fatalf("expected only folder item, got %+v", response.Items)
 	}
 }
 
-func TestPublicFilesSupportsPaginationAndSort(t *testing.T) {
+func TestPublicLatestFilesReturnsNewestFirst(t *testing.T) {
 	cfg := newRouterTestConfig(t)
 	db := newRouterTestDB(t)
 	createPublicTestFile(t, db, publicTestFile{
 		title:         "低下载",
-		status:        model.ResourceStatusActive,
 		downloadCount: 1,
 		createdAt:     time.Date(2026, 3, 11, 10, 0, 0, 0, time.UTC),
 	})
 	createPublicTestFile(t, db, publicTestFile{
 		title:         "高下载",
-		status:        model.ResourceStatusActive,
 		downloadCount: 20,
 		createdAt:     time.Date(2026, 3, 11, 11, 0, 0, 0, time.UTC),
 	})
 	createPublicTestFile(t, db, publicTestFile{
 		title:         "中下载",
-		status:        model.ResourceStatusActive,
 		downloadCount: 10,
 		createdAt:     time.Date(2026, 3, 11, 12, 0, 0, 0, time.UTC),
 	})
 
 	engine := New(db, cfg, newRouterSessionManager(db))
-	request := httptest.NewRequest(http.MethodGet, "/api/public/files?sort=download_count_desc&page=1&page_size=2", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/public/files/latest?limit=2", nil)
 	recorder := httptest.NewRecorder()
 
 	engine.ServeHTTP(recorder, request)
@@ -151,24 +126,53 @@ func TestPublicFilesSupportsPaginationAndSort(t *testing.T) {
 
 	var response struct {
 		Items []struct {
-			Title string `json:"title"`
+			Name string `json:"name"`
 		} `json:"items"`
-		Page     int `json:"page"`
-		PageSize int `json:"page_size"`
-		Total    int `json:"total"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode response failed: %v", err)
 	}
 
-	if response.Page != 1 || response.PageSize != 2 || response.Total != 3 {
-		t.Fatalf("unexpected pagination metadata: %+v", response)
-	}
 	if len(response.Items) != 2 {
 		t.Fatalf("expected 2 items, got %d", len(response.Items))
 	}
-	if response.Items[0].Title != "高下载" || response.Items[1].Title != "中下载" {
-		t.Fatalf("unexpected sorted order: %+v", response.Items)
+	if response.Items[0].Name != "中下载.pdf" || response.Items[1].Name != "高下载.pdf" {
+		t.Fatalf("unexpected latest file order: %+v", response.Items)
+	}
+}
+
+func TestPublicFolderFilesSupportsNameSort(t *testing.T) {
+	cfg := newRouterTestConfig(t)
+	db := newRouterTestDB(t)
+	folderID := createPublicTestFolder(t, db, "排序目录")
+	createPublicTestFile(t, db, publicTestFile{title: "c-file", folderID: &folderID})
+	createPublicTestFile(t, db, publicTestFile{title: "a-file", folderID: &folderID})
+	createPublicTestFile(t, db, publicTestFile{title: "b-file", folderID: &folderID})
+
+	engine := New(db, cfg, newRouterSessionManager(db))
+	request := httptest.NewRequest(http.MethodGet, "/api/public/folders/"+folderID+"/files?sort=name_asc&page=1&page_size=10", nil)
+	recorder := httptest.NewRecorder()
+
+	engine.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var response struct {
+		Items []struct {
+			Name string `json:"name"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response failed: %v", err)
+	}
+
+	if len(response.Items) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(response.Items))
+	}
+	if response.Items[0].Name != "a-file.pdf" || response.Items[1].Name != "b-file.pdf" || response.Items[2].Name != "c-file.pdf" {
+		t.Fatalf("unexpected name order: %+v", response.Items)
 	}
 }
 
@@ -233,14 +237,12 @@ func TestPublicFoldersReturnsAggregatedStats(t *testing.T) {
 	})
 	createPublicTestFile(t, db, publicTestFile{
 		title:         "根目录文件",
-		status:        model.ResourceStatusActive,
 		folderID:      &rootID,
 		downloadCount: 3,
 		size:          128,
 	})
 	createPublicTestFile(t, db, publicTestFile{
 		title:         "子目录文件",
-		status:        model.ResourceStatusActive,
 		folderID:      &childID,
 		downloadCount: 7,
 		size:          256,
@@ -286,7 +288,6 @@ func TestPublicFoldersReturnsAggregatedStats(t *testing.T) {
 
 type publicTestFile struct {
 	title         string
-	status        model.ResourceStatus
 	folderID      *string
 	downloadCount int64
 	size          int64
@@ -297,7 +298,6 @@ func createPublicTestFile(t *testing.T, db *gorm.DB, input publicTestFile) *mode
 	t.Helper()
 
 	fileID := mustNewID(t)
-	storedName := mustNewID(t) + ".bin"
 	createdAt := input.createdAt
 	if createdAt.IsZero() {
 		createdAt = time.Date(2026, 3, 11, 9, 0, 0, 0, time.UTC)
@@ -306,16 +306,11 @@ func createPublicTestFile(t *testing.T, db *gorm.DB, input publicTestFile) *mode
 	file := &model.File{
 		ID:            fileID,
 		FolderID:      input.folderID,
-		Title:         input.title,
-		OriginalName:  input.title + ".pdf",
-		StoredName:    storedName,
-		Extension:     ".pdf",
+		Name:          input.title + ".pdf",
+		Extension:     "pdf",
 		MimeType:      "application/pdf",
 		Size:          input.size,
-		DiskPath:      "/data/openshare/repository/" + storedName,
-		Status:        input.status,
 		DownloadCount: input.downloadCount,
-		UploaderIP:    "127.0.0.1",
 		CreatedAt:     createdAt,
 		UpdatedAt:     createdAt,
 	}
@@ -351,7 +346,6 @@ func createPublicTestFolderWithParent(t *testing.T, db *gorm.DB, input publicTes
 		Name:        input.name,
 		Description: input.description,
 		SourcePath:  &sourcePath,
-		Status:      model.ResourceStatusActive,
 		CreatedAt:   time.Date(2026, 3, 11, 8, 0, 0, 0, time.UTC),
 		UpdatedAt:   time.Date(2026, 3, 11, 8, 0, 0, 0, time.UTC),
 	}

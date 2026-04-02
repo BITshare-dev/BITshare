@@ -28,7 +28,6 @@ const (
 	AdminPermissionManageAnnouncements AdminPermission = "manage_announcements"
 	AdminPermissionEditResources       AdminPermission = "edit_resources"
 	AdminPermissionDeleteResources     AdminPermission = "delete_resources"
-	AdminPermissionReviewReports       AdminPermission = "review_reports"
 )
 
 var validAdminPermissions = map[AdminPermission]struct{}{
@@ -42,7 +41,6 @@ var validAdminPermissions = map[AdminPermission]struct{}{
 var adminPermissionAliases = map[AdminPermission]AdminPermission{
 	AdminPermissionReviewSubmissions:   AdminPermissionSubmissionModeration,
 	AdminPermissionDirectUpload:        AdminPermissionSubmissionModeration,
-	AdminPermissionReviewReports:       AdminPermissionResourceModeration,
 	AdminPermissionEditResources:       AdminPermissionResourceModeration,
 	AdminPermissionDeleteResources:     AdminPermissionResourceModeration,
 	AdminPermissionManageAnnouncements: AdminPermissionAnnouncements,

@@ -49,7 +49,7 @@ func (h *PublicDownloadHandler) DownloadFile(ctx *gin.Context) {
 	if download.MimeType != "" {
 		ctx.Header("Content-Type", download.MimeType)
 	}
-	ctx.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", download.OriginalName))
+	ctx.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", download.FileName))
 	ctx.Header("Content-Length", strconv.FormatInt(download.Size, 10))
 
 	if err := h.service.RecordDownload(ctx.Request.Context(), download.FileID); err != nil {
@@ -57,7 +57,7 @@ func (h *PublicDownloadHandler) DownloadFile(ctx *gin.Context) {
 		return
 	}
 
-	http.ServeContent(ctx.Writer, ctx.Request, download.OriginalName, download.ModTime, download.Content)
+	http.ServeContent(ctx.Writer, ctx.Request, download.FileName, download.ModTime, download.Content)
 }
 
 func (h *PublicDownloadHandler) DownloadFolder(ctx *gin.Context) {
@@ -169,7 +169,7 @@ func (h *PublicDownloadHandler) DownloadBatch(ctx *gin.Context) {
 			return
 		}
 
-		entryName := uniqueZipEntryName(item.OriginalName, usedNames)
+		entryName := uniqueZipEntryName(item.FileName, usedNames)
 		entry, createErr := zipWriter.Create(entryName)
 		if createErr != nil {
 			opened.Content.Close()

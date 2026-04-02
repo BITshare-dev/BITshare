@@ -22,7 +22,7 @@ type AdminDashboardStatsRow struct {
 	RecentFiles        int64
 	RecentDownloads    int64
 	PendingSubmissions int64
-	PendingReports     int64
+	PendingFeedbacks   int64
 }
 
 func NewAdminDashboardRepository(db *gorm.DB) *AdminDashboardRepository {
@@ -45,7 +45,7 @@ func (r *AdminDashboardRepository) GetStats(ctx context.Context, since time.Time
 	row.TotalFiles = system.TotalFiles
 	row.TotalDownloads = system.TotalDownloads
 	row.PendingSubmissions = system.PendingSubmissions
-	row.PendingReports = system.PendingReports
+	row.PendingFeedbacks = system.PendingFeedbacks
 
 	sinceDay := since.UTC().Format("2006-01-02")
 	type dailySums struct {

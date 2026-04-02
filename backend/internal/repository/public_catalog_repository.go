@@ -14,12 +14,16 @@ type PublicCatalogRepository struct {
 	db *gorm.DB
 }
 
-type PublicFileListQuery struct {
-	FolderID       *string
-	FilterByFolder bool // true when the caller explicitly passed a folder_id (including root)
-	Offset         int
-	Limit          int
-	OrderBy        []string
+type PublicFolderFileListQuery struct {
+	FolderID string
+	Offset   int
+	Limit    int
+	OrderBy  []string
+}
+
+type PublicFileFeedQuery struct {
+	Limit   int
+	OrderBy []string
 }
 
 type PublicFolderRow struct {
@@ -37,19 +41,10 @@ func NewPublicCatalogRepository(db *gorm.DB) *PublicCatalogRepository {
 	return &PublicCatalogRepository{db: db}
 }
 
-func (r *PublicCatalogRepository) ListPublicFiles(ctx context.Context, query PublicFileListQuery) ([]model.File, int64, error) {
+func (r *PublicCatalogRepository) ListPublicFolderFiles(ctx context.Context, query PublicFolderFileListQuery) ([]model.File, int64, error) {
 	base := r.db.WithContext(ctx).
 		Model(&model.File{}).
-		Where("status = ?", model.ResourceStatusActive)
-
-	if query.FilterByFolder {
-		if query.FolderID == nil {
-			base = base.Where("folder_id IS NULL")
-		} else {
-			base = base.Where("folder_id = ?", *query.FolderID)
-		}
-	}
-	// When FilterByFolder is false, no folder filter → show ALL active files
+		Where("folder_id = ?", query.FolderID)
 
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
@@ -69,11 +64,24 @@ func (r *PublicCatalogRepository) ListPublicFiles(ctx context.Context, query Pub
 	return files, total, nil
 }
 
+func (r *PublicCatalogRepository) ListManagedFileFeed(ctx context.Context, query PublicFileFeedQuery) ([]model.File, error) {
+	listQuery := r.db.WithContext(ctx).Model(&model.File{})
+	for _, orderBy := range query.OrderBy {
+		listQuery = listQuery.Order(orderBy)
+	}
+
+	var files []model.File
+	if err := listQuery.Limit(query.Limit).Find(&files).Error; err != nil {
+		return nil, fmt.Errorf("list managed file feed: %w", err)
+	}
+	return files, nil
+}
+
 func (r *PublicCatalogRepository) FolderExists(ctx context.Context, folderID string) (bool, error) {
 	var count int64
 	err := r.db.WithContext(ctx).
 		Model(&model.Folder{}).
-		Where("id = ? AND status = ?", folderID, model.ResourceStatusActive).
+		Where("id = ?", folderID).
 		Count(&count).
 		Error
 	if err != nil {
@@ -86,8 +94,7 @@ func (r *PublicCatalogRepository) FolderExists(ctx context.Context, folderID str
 func (r *PublicCatalogRepository) ListPublicFolders(ctx context.Context, parentID *string) ([]PublicFolderRow, error) {
 	query := r.db.WithContext(ctx).
 		Model(&model.Folder{}).
-		Select("id, parent_id, name, description, updated_at, file_count, download_count, total_size").
-		Where("status = ?", model.ResourceStatusActive)
+		Select("id, parent_id, name, description, updated_at, file_count, download_count, total_size")
 
 	if parentID == nil {
 		query = query.Where("parent_id IS NULL")
@@ -106,7 +113,7 @@ func (r *PublicCatalogRepository) ListPublicFolders(ctx context.Context, parentI
 func (r *PublicCatalogRepository) FindPublicFolderByID(ctx context.Context, folderID string) (*model.Folder, error) {
 	var folder model.Folder
 	err := r.db.WithContext(ctx).
-		Where("id = ? AND status = ?", folderID, model.ResourceStatusActive).
+		Where("id = ?", folderID).
 		Take(&folder).
 		Error
 	if err != nil {

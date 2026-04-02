@@ -34,7 +34,6 @@ type SearchCandidate struct {
 	EntityType    string
 	ID            string
 	Name          string
-	OriginalName  string
 	Description   string
 	Extension     string
 	Size          int64
@@ -45,7 +44,7 @@ type SearchCandidate struct {
 	ParentID      *string
 }
 
-// SearchCandidates recalls active file and folder candidates using parameterized
+// SearchCandidates recalls managed file and folder candidates using parameterized
 // LIKE matching. It returns raw candidates for service-layer ranking.
 func (r *SearchRepository) SearchCandidates(ctx context.Context, query SearchCandidateQuery) ([]SearchCandidate, int64, error) {
 	files, fileTotal, err := r.searchFilesForCandidates(ctx, query)
@@ -64,8 +63,7 @@ func (r *SearchRepository) SearchCandidates(ctx context.Context, query SearchCan
 		candidates = append(candidates, SearchCandidate{
 			EntityType:    "file",
 			ID:            file.ID,
-			Name:          file.Title,
-			OriginalName:  file.OriginalName,
+			Name:          file.Name,
 			Description:   file.Description,
 			Extension:     file.Extension,
 			Size:          file.Size,
@@ -95,14 +93,13 @@ func (r *SearchRepository) SearchCandidates(ctx context.Context, query SearchCan
 
 func (r *SearchRepository) searchFilesForCandidates(ctx context.Context, query SearchCandidateQuery) ([]model.File, int64, error) {
 	db := r.db.WithContext(ctx).
-		Model(&model.File{}).
-		Where("status = ? AND deleted_at IS NULL", model.ResourceStatusActive)
+		Model(&model.File{})
 
 	if query.ScopeFolderIDs != nil {
 		db = db.Where("folder_id IN ?", query.ScopeFolderIDs)
 	}
 
-	db = applySearchTermFilters(db, []string{"title", "original_name", "description"}, query.Terms)
+	db = applySearchTermFilters(db, []string{"name", "description"}, query.Terms)
 
 	var total int64
 	if err := db.Count(&total).Error; err != nil {
@@ -113,7 +110,7 @@ func (r *SearchRepository) searchFilesForCandidates(ctx context.Context, query S
 	}
 
 	var files []model.File
-	findDB := applyCandidateOrder(db, []string{"title", "original_name"}, "description", "download_count", "updated_at", query.FullQuery)
+	findDB := applyCandidateOrder(db, []string{"name"}, "description", "download_count", "updated_at", query.FullQuery)
 	if query.Limit > 0 {
 		findDB = findDB.Limit(query.Limit)
 	}
@@ -126,8 +123,7 @@ func (r *SearchRepository) searchFilesForCandidates(ctx context.Context, query S
 
 func (r *SearchRepository) searchFoldersForCandidates(ctx context.Context, query SearchCandidateQuery) ([]model.Folder, int64, error) {
 	db := r.db.WithContext(ctx).
-		Model(&model.Folder{}).
-		Where("status = ? AND deleted_at IS NULL", model.ResourceStatusActive)
+		Model(&model.Folder{})
 
 	if query.ScopeFolderIDs != nil {
 		db = db.Where("id IN ?", query.ScopeFolderIDs)
@@ -260,7 +256,7 @@ func (r *SearchRepository) GetDescendantFolderIDs(ctx context.Context, folderID 
 		var childIDs []string
 		if err := r.db.WithContext(ctx).
 			Model(&model.Folder{}).
-			Where("parent_id = ? AND status = ? AND deleted_at IS NULL", current, model.ResourceStatusActive).
+			Where("parent_id = ?", current).
 			Pluck("id", &childIDs).Error; err != nil {
 			return nil, fmt.Errorf("get child folders: %w", err)
 		}

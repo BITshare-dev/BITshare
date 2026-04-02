@@ -15,24 +15,23 @@ func registerPublicRoutes(api *gin.RouterGroup, handlers *routeHandlers) {
 	api.POST("/visits", handlers.siteVisit.Record)
 
 	public := api.Group("/public")
-	public.GET("/files", handlers.publicCatalog.ListPublicFiles)
 	public.POST("/files/batch-download", handlers.publicDownload.DownloadBatch)
 	public.POST("/resources/batch-download", handlers.publicDownload.DownloadResourceBatch)
+	public.GET("/files/hot", handlers.publicCatalog.ListHotFiles)
+	public.GET("/files/latest", handlers.publicCatalog.ListLatestFiles)
 	public.GET("/files/:fileID", handlers.publicDownload.GetFileDetail)
-	public.PUT("/files/:fileID", handlers.resourceManagement.PublicUpdateFile)
-	public.DELETE("/files/:fileID", handlers.resourceManagement.PublicDeleteFile)
 	public.GET("/files/:fileID/download", handlers.publicDownload.DownloadFile)
 	public.GET("/folders", handlers.publicCatalog.ListPublicFolders)
+	public.GET("/folders/:folderID/files", handlers.publicCatalog.ListPublicFolderFiles)
 	public.GET("/folders/:folderID", handlers.publicCatalog.GetPublicFolderDetail)
 	public.GET("/folders/:folderID/download", handlers.publicDownload.DownloadFolder)
 	public.GET("/announcements", handlers.announcement.ListPublic)
 	public.GET("/receipt-code", handlers.publicReceipt.Ensure)
-	public.GET("/system/policy", handlers.systemSetting.GetPublicPolicy)
 	public.GET("/search", handlers.search.Search)
+	public.POST("/feedback", handlers.feedback.Create)
+	public.GET("/feedback/:receiptCode", handlers.feedback.LookupByReceiptCode)
 	public.POST("/submissions", handlers.publicUpload.CreateSubmission)
 	public.GET("/submissions/:receiptCode", handlers.publicSubmission.LookupByReceiptCode)
-	public.POST("/reports", handlers.report.CreateReport)
-	public.GET("/reports/:reportID", handlers.report.LookupReport)
 }
 
 func registerAdminRoutes(api *gin.RouterGroup, handlers *routeHandlers) {
@@ -83,6 +82,21 @@ func registerAdminRoutes(api *gin.RouterGroup, handlers *routeHandlers) {
 		middleware.RequireAdminPermission(model.AdminPermissionSubmissionModeration),
 		handlers.moderation.RejectSubmission,
 	)
+	adminProtected.GET(
+		"/feedback",
+		middleware.RequireAdminPermission(model.AdminPermissionResourceModeration),
+		handlers.feedback.List,
+	)
+	adminProtected.POST(
+		"/feedback/:feedbackID/approve",
+		middleware.RequireAdminPermission(model.AdminPermissionResourceModeration),
+		handlers.feedback.Approve,
+	)
+	adminProtected.POST(
+		"/feedback/:feedbackID/reject",
+		middleware.RequireAdminPermission(model.AdminPermissionResourceModeration),
+		handlers.feedback.Reject,
+	)
 	adminProtected.POST(
 		"/imports/local",
 		middleware.RequireAdminPermission(model.AdminPermissionManageSystem),
@@ -115,11 +129,6 @@ func registerAdminRoutes(api *gin.RouterGroup, handlers *routeHandlers) {
 		middleware.RequireAdminPermission(model.AdminPermissionResourceModeration),
 		handlers.resourceManagement.UpdateFile,
 	)
-	adminProtected.POST(
-		"/resources/files/:fileID/offline",
-		middleware.RequireAdminPermission(model.AdminPermissionResourceModeration),
-		handlers.resourceManagement.OfflineFile,
-	)
 	adminProtected.DELETE(
 		"/resources/files/:fileID",
 		middleware.RequireAdminPermission(model.AdminPermissionResourceModeration),
@@ -129,21 +138,6 @@ func registerAdminRoutes(api *gin.RouterGroup, handlers *routeHandlers) {
 		"/resources/folders/:folderID",
 		middleware.RequireAdminPermission(model.AdminPermissionResourceModeration),
 		handlers.resourceManagement.DeleteFolder,
-	)
-	adminProtected.GET(
-		"/reports/pending",
-		middleware.RequireAdminPermission(model.AdminPermissionResourceModeration),
-		handlers.report.ListPendingReports,
-	)
-	adminProtected.POST(
-		"/reports/:reportID/approve",
-		middleware.RequireAdminPermission(model.AdminPermissionResourceModeration),
-		handlers.report.ApproveReport,
-	)
-	adminProtected.POST(
-		"/reports/:reportID/reject",
-		middleware.RequireAdminPermission(model.AdminPermissionResourceModeration),
-		handlers.report.RejectReport,
 	)
 
 	adminProtected.GET("/admins", handlers.adminManagement.ListAdmins)

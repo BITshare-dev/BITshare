@@ -11,6 +11,7 @@ type routeHandlers struct {
 	adminDashboard     *handler.AdminDashboardHandler
 	announcement       *handler.AnnouncementHandler
 	adminManagement    *handler.AdminManagementHandler
+	feedback           *handler.FeedbackHandler
 	imports            *handler.ImportHandler
 	moderation         *handler.ModerationHandler
 	operationLog       *handler.OperationLogHandler
@@ -19,7 +20,6 @@ type routeHandlers struct {
 	publicReceipt      *handler.PublicReceiptHandler
 	publicSubmission   *handler.PublicSubmissionHandler
 	publicUpload       *handler.PublicUploadHandler
-	report             *handler.ReportHandler
 	resourceManagement *handler.ResourceManagementHandler
 	search             *handler.SearchHandler
 	siteVisit          *handler.SiteVisitHandler
@@ -30,13 +30,13 @@ type routeRepositories struct {
 	admin              *repository.AdminRepository
 	adminDashboard     *repository.AdminDashboardRepository
 	announcement       *repository.AnnouncementRepository
+	feedback           *repository.FeedbackRepository
 	imports            *repository.ImportRepository
 	moderation         *repository.ModerationRepository
 	operationLog       *repository.OperationLogRepository
 	publicCatalog      *repository.PublicCatalogRepository
 	publicDownload     *repository.PublicDownloadRepository
 	publicSubmission   *repository.PublicSubmissionRepository
-	report             *repository.ReportRepository
 	resourceManagement *repository.ResourceManagementRepository
 	search             *repository.SearchRepository
 	siteVisit          *repository.SiteVisitRepository
@@ -50,6 +50,7 @@ type routeServices struct {
 	adminDashboard     *service.AdminDashboardService
 	announcement       *service.AnnouncementService
 	adminManagement    *service.AdminManagementService
+	feedback           *service.FeedbackService
 	imports            *service.ImportService
 	moderation         *service.ModerationService
 	operationLog       *service.OperationLogService
@@ -58,7 +59,6 @@ type routeServices struct {
 	publicReceipt      *service.ReceiptCodeService
 	publicSubmission   *service.PublicSubmissionService
 	publicUpload       *service.PublicUploadService
-	report             *service.ReportService
 	resourceManagement *service.ResourceManagementService
 	search             *service.SearchService
 	siteVisit          *service.SiteVisitService

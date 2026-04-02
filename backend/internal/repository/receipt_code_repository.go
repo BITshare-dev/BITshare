@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"gorm.io/gorm"
+
+	"openshare/backend/internal/model"
 )
 
 type ReceiptCodeRepository struct {
@@ -28,14 +30,13 @@ func (r *ReceiptCodeRepository) Exists(ctx context.Context, receiptCode string) 
 		return true, nil
 	}
 
-	var reportCount int64
+	var feedbackCount int64
 	if err := r.db.WithContext(ctx).
-		Table("reports").
+		Model(&model.Feedback{}).
 		Where("receipt_code = ?", receiptCode).
-		Count(&reportCount).
+		Count(&feedbackCount).
 		Error; err != nil {
-		return false, fmt.Errorf("count reports by receipt code: %w", err)
+		return false, fmt.Errorf("count feedback by receipt code: %w", err)
 	}
-
-	return reportCount > 0, nil
+	return feedbackCount > 0, nil
 }

@@ -11,21 +11,26 @@ import { useSessionStore } from "../../stores/session";
 interface PendingSubmissionItem {
   submission_id: string;
   receipt_code: string;
-  title: string;
+  name: string;
   description: string;
   relative_path: string;
+  review_reason: string;
   uploaded_at: string;
-  file_name: string;
-  file_size: number;
-  file_mime_type: string;
+  size: number;
+  mime_type: string;
 }
 
-interface PendingReportItem {
+interface FeedbackItem {
   id: string;
+  receipt_code: string;
+  file_id?: string | null;
+  folder_id?: string | null;
   target_name: string;
+  target_path: string;
   target_type: "file" | "folder";
   description: string;
   reporter_ip: string;
+  status: string;
   created_at: string;
 }
 
@@ -38,26 +43,26 @@ const submissionsError = ref("");
 const submissionActionMessage = ref("");
 const submissionActionError = ref("");
 const submissionRejectTarget = ref<PendingSubmissionItem | null>(null);
-const submissionRejectReason = ref("");
+const submissionReviewReason = ref("");
 const submissionRejectSubmitting = ref(false);
 
-const reports = ref<PendingReportItem[]>([]);
-const reportsLoading = ref(false);
-const reportsLoaded = ref(false);
-const reportsError = ref("");
-const reportActionMessage = ref("");
-const reportActionError = ref("");
-const reportReviewTarget = ref<PendingReportItem | null>(null);
-const reportReviewMode = ref<"approve" | "reject">("approve");
-const reportReviewReason = ref("");
-const reportReviewSubmitting = ref(false);
+const feedbackItems = ref<FeedbackItem[]>([]);
+const feedbackLoading = ref(false);
+const feedbackLoaded = ref(false);
+const feedbackError = ref("");
+const feedbackActionMessage = ref("");
+const feedbackActionError = ref("");
+const feedbackReviewTarget = ref<FeedbackItem | null>(null);
+const feedbackReviewMode = ref<"approve" | "reject">("approve");
+const feedbackReviewReason = ref("");
+const feedbackReviewSubmitting = ref(false);
 
 onMounted(() => {
   if (sessionStore.hasPermission("submission_moderation")) {
     void loadSubmissions();
   }
   if (sessionStore.hasPermission("resource_moderation")) {
-    void loadReports();
+    void loadFeedback();
   }
 });
 
@@ -80,7 +85,7 @@ async function approveSubmission(item: PendingSubmissionItem) {
   submissionActionError.value = "";
   try {
     await httpClient.post(`/admin/submissions/${item.submission_id}/approve`);
-    submissionActionMessage.value = `《${item.title}》已审核通过。`;
+    submissionActionMessage.value = `《${item.name}》已审核通过。`;
     await loadSubmissions();
     notifyPendingAuditChanged();
   } catch (err: unknown) {
@@ -90,12 +95,12 @@ async function approveSubmission(item: PendingSubmissionItem) {
 
 function openRejectSubmissionDialog(item: PendingSubmissionItem) {
   submissionRejectTarget.value = item;
-  submissionRejectReason.value = "";
+  submissionReviewReason.value = "";
 }
 
 function closeRejectSubmissionDialog() {
   submissionRejectTarget.value = null;
-  submissionRejectReason.value = "";
+  submissionReviewReason.value = "";
   submissionRejectSubmitting.value = false;
 }
 
@@ -103,7 +108,7 @@ async function rejectSubmission() {
   if (!submissionRejectTarget.value) {
     return;
   }
-  if (!submissionRejectReason.value.trim()) {
+  if (!submissionReviewReason.value.trim()) {
     submissionActionError.value = "请输入驳回原因。";
     return;
   }
@@ -112,9 +117,9 @@ async function rejectSubmission() {
   submissionRejectSubmitting.value = true;
   try {
     await httpClient.post(`/admin/submissions/${submissionRejectTarget.value.submission_id}/reject`, {
-      reject_reason: submissionRejectReason.value.trim(),
+      review_reason: submissionReviewReason.value.trim(),
     });
-    submissionActionMessage.value = `《${submissionRejectTarget.value.title}》已驳回。`;
+    submissionActionMessage.value = `《${submissionRejectTarget.value.name}》已驳回。`;
     await loadSubmissions();
     notifyPendingAuditChanged();
     closeRejectSubmissionDialog();
@@ -125,57 +130,61 @@ async function rejectSubmission() {
   }
 }
 
-async function loadReports() {
-  reportsLoading.value = true;
-  reportsError.value = "";
+async function loadFeedback() {
+  feedbackLoading.value = true;
+  feedbackError.value = "";
   try {
-    const response = await httpClient.get<{ items: PendingReportItem[] }>("/admin/reports/pending");
-    reports.value = response.items ?? [];
+    const response = await httpClient.get<{ items: FeedbackItem[] }>("/admin/feedback");
+    feedbackItems.value = response.items ?? [];
   } catch (err: unknown) {
-    reportsError.value = readApiError(err, "加载反馈审核列表失败。");
+    feedbackError.value = readApiError(err, "加载反馈列表失败。");
   } finally {
-    reportsLoaded.value = true;
-    reportsLoading.value = false;
+    feedbackLoaded.value = true;
+    feedbackLoading.value = false;
   }
 }
 
-function openApproveReportDialog(report: PendingReportItem) {
-  reportReviewTarget.value = report;
-  reportReviewMode.value = "approve";
-  reportReviewReason.value = "";
+function openApproveFeedbackDialog(item: FeedbackItem) {
+  feedbackReviewTarget.value = item;
+  feedbackReviewMode.value = "approve";
+  feedbackReviewReason.value = "";
 }
 
-function openRejectReportDialog(report: PendingReportItem) {
-  reportReviewTarget.value = report;
-  reportReviewMode.value = "reject";
-  reportReviewReason.value = "";
+function openRejectFeedbackDialog(item: FeedbackItem) {
+  feedbackReviewTarget.value = item;
+  feedbackReviewMode.value = "reject";
+  feedbackReviewReason.value = "";
 }
 
-function closeReportReviewDialog() {
-  reportReviewTarget.value = null;
-  reportReviewReason.value = "";
-  reportReviewSubmitting.value = false;
+function closeFeedbackReviewDialog() {
+  feedbackReviewTarget.value = null;
+  feedbackReviewReason.value = "";
+  feedbackReviewSubmitting.value = false;
 }
 
-async function submitReportReview() {
-  if (!reportReviewTarget.value) return;
-  reportActionError.value = "";
-  reportActionMessage.value = "";
-  reportReviewSubmitting.value = true;
+async function submitFeedbackReview() {
+  if (!feedbackReviewTarget.value) return;
+  if (feedbackReviewMode.value === "reject" && !feedbackReviewReason.value.trim()) {
+    feedbackActionError.value = "请输入驳回说明。";
+    return;
+  }
+
+  feedbackActionMessage.value = "";
+  feedbackActionError.value = "";
+  feedbackReviewSubmitting.value = true;
   try {
-    await httpClient.post(`/admin/reports/${reportReviewTarget.value.id}/${reportReviewMode.value}`, {
-      review_reason: reportReviewReason.value.trim(),
-    });
-    reportActionMessage.value = reportReviewMode.value === "approve"
-      ? "反馈已处理，处理意见已回传给用户。"
-      : "反馈已驳回。";
-    await loadReports();
+    await httpClient.post(
+      `/admin/feedback/${feedbackReviewTarget.value.id}/${feedbackReviewMode.value}`,
+      { review_reason: feedbackReviewReason.value.trim() },
+    );
+    feedbackActionMessage.value = feedbackReviewMode.value === "approve" ? "反馈已处理。" : "反馈已驳回。";
+    await loadFeedback();
     notifyPendingAuditChanged();
-    closeReportReviewDialog();
+    closeFeedbackReviewDialog();
   } catch (err: unknown) {
-    reportActionError.value = readApiError(err, "操作失败，请重试。");
+    feedbackActionError.value = readApiError(err, "操作失败，请重试。");
   } finally {
-    reportReviewSubmitting.value = false;
+    feedbackReviewSubmitting.value = false;
   }
 }
 
@@ -224,10 +233,10 @@ function notifyPendingAuditChanged() {
             <div class="flex flex-wrap items-start justify-between gap-4">
               <div class="space-y-2">
                 <div class="flex flex-wrap items-center gap-2">
-                  <h3 class="text-base font-semibold text-slate-900">{{ item.title }}</h3>
-                  <span class="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{{ item.file_mime_type }}</span>
+                  <h3 class="text-base font-semibold text-slate-900">{{ item.name }}</h3>
+                  <span class="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{{ item.mime_type }}</span>
                 </div>
-                <p class="text-sm text-slate-500">{{ item.file_name }} · {{ formatSize(item.file_size) }}</p>
+                <p class="text-sm text-slate-500">{{ item.name }} · {{ formatSize(item.size) }}</p>
                 <p v-if="item.relative_path" class="text-sm text-slate-500">目录结构：{{ item.relative_path }}</p>
                 <p class="text-sm text-slate-500">回执码：{{ item.receipt_code }} · {{ formatDate(item.uploaded_at) }}</p>
                 <p v-if="item.description" class="text-sm leading-6 text-slate-600">{{ item.description }}</p>
@@ -245,38 +254,40 @@ function notifyPendingAuditChanged() {
       <SurfaceCard class="space-y-5">
         <div class="flex items-start justify-between gap-4">
           <div>
-            <h2 class="text-lg font-semibold text-slate-900">反馈审核</h2>
+            <h2 class="text-lg font-semibold text-slate-900">用户反馈</h2>
           </div>
-          <button v-if="sessionStore.hasPermission('resource_moderation')" class="btn-secondary" @click="loadReports">刷新</button>
+          <button v-if="sessionStore.hasPermission('resource_moderation')" class="btn-secondary" @click="loadFeedback">刷新</button>
         </div>
 
-        <p v-if="reportActionMessage" class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ reportActionMessage }}</p>
-        <p v-if="reportActionError" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ reportActionError }}</p>
-        <p v-if="reportsError" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ reportsError }}</p>
+        <p v-if="feedbackActionMessage" class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ feedbackActionMessage }}</p>
+        <p v-if="feedbackActionError" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ feedbackActionError }}</p>
+        <p v-if="feedbackError" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ feedbackError }}</p>
 
-        <div v-if="!sessionStore.hasPermission('resource_moderation')" class="text-sm text-slate-500">当前账号没有反馈审核权限。</div>
-        <div v-else-if="!reportsLoaded && reportsLoading" class="text-sm text-slate-500">加载中…</div>
+        <div v-if="!sessionStore.hasPermission('resource_moderation')" class="text-sm text-slate-500">当前账号没有资料管理权限。</div>
+        <div v-else-if="!feedbackLoaded && feedbackLoading" class="text-sm text-slate-500">加载中…</div>
         <div v-else class="space-y-4">
-          <div v-for="report in reports" :key="report.id" class="rounded-xl border border-slate-200 p-4">
+          <div v-for="item in feedbackItems" :key="item.id" class="rounded-xl border border-slate-200 p-4">
             <div class="flex flex-wrap items-start justify-between gap-4">
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-2">
-                  <span class="rounded-lg bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{{ report.target_type === "file" ? "文件" : "文件夹" }}</span>
-                  <h3 class="text-base font-semibold text-slate-900">{{ report.target_name }}</h3>
+                  <span class="rounded-lg bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{{ item.target_type === "file" ? "文件" : "文件夹" }}</span>
+                  <h3 class="text-base font-semibold text-slate-900">{{ item.target_name }}</h3>
                 </div>
                 <div class="mt-3 flex flex-wrap gap-3 text-sm text-slate-500">
-                  <span>反馈时间：{{ formatDate(report.created_at) }}</span>
-                  <span>IP: {{ report.reporter_ip }}</span>
+                  <span>反馈时间：{{ formatDate(item.created_at) }}</span>
+                  <span>回执码：{{ item.receipt_code }}</span>
+                  <span>IP：{{ item.reporter_ip }}</span>
                 </div>
-                <p v-if="report.description" class="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">{{ report.description }}</p>
+                <p v-if="item.target_path" class="mt-3 text-sm text-slate-500 break-all">目标路径：{{ item.target_path }}</p>
+                <p v-if="item.description" class="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">{{ item.description }}</p>
               </div>
               <div class="flex shrink-0 flex-col gap-2">
-                <button class="btn-primary" @click="openApproveReportDialog(report)">已处理</button>
-                <button class="btn-secondary" @click="openRejectReportDialog(report)">驳回反馈</button>
+                <button class="btn-primary" @click="openApproveFeedbackDialog(item)">已处理</button>
+                <button class="btn-secondary" @click="openRejectFeedbackDialog(item)">驳回反馈</button>
               </div>
             </div>
           </div>
-          <EmptyState v-if="!reportsLoading && reports.length === 0" title="当前没有待处理反馈" />
+          <EmptyState v-if="!feedbackLoading && feedbackItems.length === 0" title="当前没有待处理反馈" />
         </div>
       </SurfaceCard>
     </section>
@@ -292,12 +303,12 @@ function notifyPendingAuditChanged() {
         </div>
         <div class="mt-5 space-y-4">
           <div class="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            <p class="font-medium text-slate-900">{{ submissionRejectTarget.title }}</p>
-            <p class="mt-1">{{ submissionRejectTarget.file_name }} · {{ formatSize(submissionRejectTarget.file_size) }}</p>
+            <p class="font-medium text-slate-900">{{ submissionRejectTarget.name }}</p>
+            <p class="mt-1">{{ submissionRejectTarget.name }} · {{ formatSize(submissionRejectTarget.size) }}</p>
             <p v-if="submissionRejectTarget.relative_path" class="mt-1">目录结构：{{ submissionRejectTarget.relative_path }}</p>
           </div>
           <textarea
-            v-model="submissionRejectReason"
+            v-model="submissionReviewReason"
             rows="4"
             class="field-area"
             placeholder="例如：资料内容不完整 / 文件命名不规范 / 与当前目录主题不符"
@@ -316,33 +327,34 @@ function notifyPendingAuditChanged() {
 
   <Teleport to="body">
     <Transition name="modal-shell">
-    <div v-if="reportReviewTarget" class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/30 px-4">
+    <div v-if="feedbackReviewTarget" class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/30 px-4">
       <div class="modal-card w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
         <div class="border-b border-slate-200 pb-4">
-          <h3 class="text-lg font-semibold text-slate-900">{{ reportReviewMode === "approve" ? "处理反馈" : "驳回反馈" }}</h3>
+          <h3 class="text-lg font-semibold text-slate-900">{{ feedbackReviewMode === "approve" ? "处理反馈" : "驳回反馈" }}</h3>
           <p class="mt-2 text-sm leading-6 text-slate-500">
-            {{ reportReviewMode === "approve" ? "填写处理意见，用户可在回执查询页看到处理结果。" : "填写驳回说明，用户可在回执查询页看到驳回原因。" }}
+            {{ feedbackReviewMode === "approve" ? "填写处理意见，用户可在回执查询页看到处理结果。" : "填写驳回说明，用户可在回执查询页看到驳回原因。" }}
           </p>
         </div>
         <div class="mt-5 space-y-4">
           <div class="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            <p class="font-medium text-slate-900">{{ reportReviewTarget.target_name }}</p>
+            <p class="font-medium text-slate-900">{{ feedbackReviewTarget.target_name }}</p>
+            <p v-if="feedbackReviewTarget.target_path" class="mt-1 break-all">{{ feedbackReviewTarget.target_path }}</p>
           </div>
           <textarea
-            v-model="reportReviewReason"
+            v-model="feedbackReviewReason"
             rows="4"
             class="field-area"
-            :placeholder="reportReviewMode === 'approve' ? '例如：已修正资料内容 / 已补充缺失文件 / 已更新简介说明' : '例如：经核实资料内容无误，反馈不成立'"
+            :placeholder="feedbackReviewMode === 'approve' ? '例如：已修正资料内容 / 已补充缺失文件 / 已更新简介说明' : '例如：经核实资料内容无误，反馈不成立'"
           />
           <div class="flex justify-end gap-3 border-t border-slate-200 pt-4">
-            <button type="button" class="btn-secondary" @click="closeReportReviewDialog">取消</button>
+            <button type="button" class="btn-secondary" @click="closeFeedbackReviewDialog">取消</button>
             <button
               type="button"
-              :class="reportReviewMode === 'approve' ? 'btn-primary' : 'btn-danger'"
-              :disabled="reportReviewSubmitting"
-              @click="submitReportReview"
+              :class="feedbackReviewMode === 'approve' ? 'btn-primary' : 'btn-danger'"
+              :disabled="feedbackReviewSubmitting"
+              @click="submitFeedbackReview"
             >
-              {{ reportReviewSubmitting ? "提交中…" : reportReviewMode === "approve" ? "确认已处理" : "确认驳回" }}
+              {{ feedbackReviewSubmitting ? "提交中…" : feedbackReviewMode === "approve" ? "确认已处理" : "确认驳回" }}
             </button>
           </div>
         </div>

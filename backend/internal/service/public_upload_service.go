@@ -7,13 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
-
-	"gorm.io/gorm"
 
 	"openshare/backend/internal/config"
 	"openshare/backend/internal/model"
@@ -25,10 +21,9 @@ import (
 var (
 	ErrInvalidUploadInput   = errors.New("invalid upload input")
 	ErrUploadReceiptExists  = errors.New("receipt code already exists")
-	ErrUploadFileTooLarge   = errors.New("upload file too large")
+	ErrUploadTooLarge       = errors.New("upload too large")
 	ErrUploadEmptyFile      = errors.New("upload file is empty")
-	ErrInvalidFileExtension = errors.New("invalid file extension")
-	ErrInvalidFileMIMEType  = errors.New("invalid file mime type")
+	ErrUploadNameConflict   = errors.New("upload name conflict")
 	ErrReceiptCodeGenerate  = errors.New("failed to generate receipt code")
 	ErrUploadFolderRequired = errors.New("upload target folder is required")
 	ErrUploadFolderNotFound = errors.New("upload target folder not found")
@@ -46,18 +41,16 @@ type PublicUploadService struct {
 }
 
 type PublicUploadInput struct {
-	Description   string
-	ReceiptCode   string
-	FolderID      string
-	UploaderIP    string
-	DirectPublish bool
-	Files         []PublicUploadFileInput
+	Description string
+	ReceiptCode string
+	FolderID    string
+	UploaderIP  string
+	Files       []PublicUploadFileInput
 }
 
 type PublicUploadFileInput struct {
-	OriginalName string
+	Name         string
 	RelativePath string
-	DeclaredMIME string
 	File         io.Reader
 }
 
@@ -65,7 +58,7 @@ type PublicUploadResult struct {
 	ReceiptCode string                 `json:"receipt_code"`
 	Status      model.SubmissionStatus `json:"status"`
 	ItemCount   int                    `json:"item_count"`
-	Titles      []string               `json:"titles"`
+	Names       []string               `json:"names"`
 	UploadedAt  time.Time              `json:"uploaded_at"`
 }
 
@@ -88,7 +81,8 @@ func NewPublicUploadService(
 
 func (s *PublicUploadService) CreateSubmission(ctx context.Context, input PublicUploadInput) (*PublicUploadResult, error) {
 	policy := s.effectivePolicy(ctx)
-	normalized, err := s.normalizeInput(input, policy)
+	actor, canDirectPublish := publicUploadActorFromContext(ctx)
+	normalized, err := s.normalizeInput(input)
 	if err != nil {
 		return nil, err
 	}
@@ -99,14 +93,15 @@ func (s *PublicUploadService) CreateSubmission(ctx context.Context, input Public
 		return nil, ErrUploadFolderRequired
 	}
 
-	rootFolder, err := s.repository.FindActiveFolderByID(ctx, normalized.FolderID)
+	rootFolder, err := s.repository.FindManagedFolderByID(ctx, normalized.FolderID)
 	if err != nil {
 		return nil, fmt.Errorf("validate upload folder: %w", err)
 	}
 	if rootFolder == nil || rootFolder.SourcePath == nil || strings.TrimSpace(*rootFolder.SourcePath) == "" {
 		return nil, ErrUploadFolderNotFound
 	}
-	rootFolderDisplayPath, err := s.folderDisplayPath(ctx, rootFolder)
+
+	rootFolderDisplayPath, err := s.repository.BuildFolderDisplayPath(ctx, &rootFolder.ID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve upload folder path: %w", err)
 	}
@@ -120,12 +115,10 @@ func (s *PublicUploadService) CreateSubmission(ctx context.Context, input Public
 	}
 
 	now := s.nowFunc()
-	allowDirectPublish := policy.Guest.AllowDirectPublish || normalized.DirectPublish
 
 	submissions := make([]model.Submission, 0, len(normalized.Files))
-	files := make([]model.File, 0, len(normalized.Files))
 	stagedPaths := make([]string, 0, len(normalized.Files))
-	titles := make([]string, 0, len(normalized.Files))
+	names := make([]string, 0, len(normalized.Files))
 	folderID := normalized.FolderID
 
 	for _, entry := range normalized.Files {
@@ -137,20 +130,16 @@ func (s *PublicUploadService) CreateSubmission(ctx context.Context, input Public
 		}
 
 		detectedMIME := strings.ToLower(strings.TrimSpace(http.DetectContentType(head)))
-		if !s.isAllowedMIME(detectedMIME, entry.DeclaredMIME) {
-			err = ErrInvalidFileMIMEType
-			break
-		}
 
-		maxFileSizeBytes := s.config.MaxFileSizeBytes
-		if policy.Upload.MaxFileSizeBytes > 0 {
-			maxFileSizeBytes = policy.Upload.MaxFileSizeBytes
+		maxUploadTotalBytes := s.config.MaxUploadTotalBytes
+		if policy.Upload.MaxUploadTotalBytes > 0 {
+			maxUploadTotalBytes = policy.Upload.MaxUploadTotalBytes
 		}
-		stagedFile, saveErr := s.storage.SaveToStaging(bufferedReader, entry.Extension, maxFileSizeBytes)
+		stagedFile, saveErr := s.storage.SaveToStaging(bufferedReader, entry.Extension, maxUploadTotalBytes)
 		if saveErr != nil {
 			switch {
 			case errors.Is(saveErr, storage.ErrFileTooLarge):
-				err = ErrUploadFileTooLarge
+				err = ErrUploadTooLarge
 			case strings.Contains(strings.ToLower(saveErr.Error()), "empty file"):
 				err = ErrUploadEmptyFile
 			default:
@@ -165,456 +154,166 @@ func (s *PublicUploadService) CreateSubmission(ctx context.Context, input Public
 			err = fmt.Errorf("generate submission id: %w", idErr)
 			break
 		}
-		fileID, idErr := identity.NewID()
-		if idErr != nil {
-			err = fmt.Errorf("generate file id: %w", idErr)
-			break
-		}
 
+		folderRef := folderID
 		submission := model.Submission{
-			ID:                   submissionID,
-			ReceiptCode:          receiptCode,
-			TitleSnapshot:        entry.Title,
-			DescriptionSnapshot:  normalized.Description,
-			RelativePathSnapshot: joinSubmissionPath(rootFolderDisplayPath, entry.RelativePath),
-			Status:               model.SubmissionStatusPending,
-			UploaderIP:           normalized.UploaderIP,
-			CreatedAt:            now,
-			UpdatedAt:            now,
-		}
-
-		submissionRef := submissionID
-		file := model.File{
-			ID:            fileID,
-			FolderID:      &folderID,
-			SubmissionID:  &submissionRef,
-			Title:         entry.Title,
-			Description:   normalized.Description,
-			OriginalName:  entry.OriginalName,
-			StoredName:    stagedFile.StoredName,
-			Extension:     entry.Extension,
-			MimeType:      detectedMIME,
-			Size:          stagedFile.Size,
-			DiskPath:      stagedFile.DiskPath,
-			Status:        model.ResourceStatusOffline,
-			DownloadCount: 0,
-			UploaderIP:    normalized.UploaderIP,
-			CreatedAt:     now,
-			UpdatedAt:     now,
-		}
-
-		if allowDirectPublish {
-			targetFolder, ensureErr := s.ensureTargetFolderForUpload(ctx, rootFolder, entry.RelativeDir, now)
-			if ensureErr != nil {
-				err = ensureErr
-				break
-			}
-			finalPath, finalName, moveErr := s.storage.MoveStagedFileToFolder(stagedFile.DiskPath, *targetFolder.SourcePath, entry.OriginalName)
-			if moveErr != nil {
-				err = fmt.Errorf("move direct-publish upload: %w", moveErr)
-				break
-			}
-			finalTitle := strings.TrimSuffix(finalName, filepath.Ext(finalName))
-			if finalTitle == "" {
-				finalTitle = finalName
-			}
-
-			file.FolderID = &targetFolder.ID
-			file.Status = model.ResourceStatusActive
-			file.DiskPath = finalPath
-			file.StoredName = finalName
-			file.OriginalName = finalName
-			file.Title = finalTitle
-			submission.TitleSnapshot = finalTitle
-			submission.RelativePathSnapshot = joinSubmissionPath(rootFolderDisplayPath, buildRelativePath(entry.RelativeDir, finalName))
-			submission.Status = model.SubmissionStatusApproved
-			submission.ReviewedAt = &now
+			ID:           submissionID,
+			ReceiptCode:  receiptCode,
+			FolderID:     &folderRef,
+			Name:         entry.Name,
+			Description:  normalized.Description,
+			RelativePath: entry.RelativePath,
+			Extension:    entry.Extension,
+			MimeType:     detectedMIME,
+			Size:         stagedFile.Size,
+			StagingPath:  stagedFile.DiskPath,
+			Status:       model.SubmissionStatusPending,
+			UploaderIP:   normalized.UploaderIP,
+			CreatedAt:    now,
+			UpdatedAt:    now,
 		}
 
 		submissions = append(submissions, submission)
-		files = append(files, file)
-		titles = append(titles, entry.Title)
+		names = append(names, submission.Name)
 	}
 
 	if err != nil {
-		for _, path := range stagedPaths {
-			if strings.TrimSpace(path) != "" {
-				_ = s.storage.DeleteStagedFile(path)
-			}
-		}
+		s.cleanupStagedPaths(stagedPaths)
 		return nil, err
 	}
 
-	if createErr := s.repository.CreateUploadBatch(ctx, submissions, files); createErr != nil {
-		for _, file := range files {
-			if file.Status == model.ResourceStatusActive {
-				_ = os.Remove(file.DiskPath)
-				continue
-			}
-			_ = s.storage.DeleteStagedFile(file.DiskPath)
+	if canDirectPublish {
+		result, publishErr := s.publishDirectUploadBatch(ctx, rootFolder, submissions, actor.AdminID, normalized.UploaderIP, now)
+		if publishErr != nil {
+			s.cleanupStagedSubmissions(submissions)
+			return nil, publishErr
 		}
-		return nil, fmt.Errorf("persist upload submission: %w", createErr)
+		return result, nil
 	}
 
-	status := model.SubmissionStatusPending
-	if allowDirectPublish {
-		status = model.SubmissionStatusApproved
+	if createErr := s.repository.CreateUploadBatch(ctx, submissions); createErr != nil {
+		s.cleanupStagedSubmissions(submissions)
+		return nil, fmt.Errorf("persist upload submission: %w", createErr)
 	}
 
 	return &PublicUploadResult{
 		ReceiptCode: receiptCode,
-		Status:      status,
+		Status:      model.SubmissionStatusPending,
 		ItemCount:   len(submissions),
-		Titles:      titles,
+		Names:       names,
 		UploadedAt:  now,
 	}, nil
 }
 
-type normalizedUploadInput struct {
-	Description   string
-	ReceiptCode   string
-	FolderID      string
-	UploaderIP    string
-	DirectPublish bool
-	Files         []normalizedUploadFile
+type directPublishedUpload struct {
+	submission        model.Submission
+	finalPath         string
+	finalName         string
+	finalRelativePath string
 }
 
-type normalizedUploadFile struct {
-	Title        string
-	OriginalName string
-	DeclaredMIME string
-	RelativePath string
-	RelativeDir  string
-	Extension    string
-	File         io.Reader
-}
-
-func (s *PublicUploadService) normalizeInput(input PublicUploadInput, policy SystemPolicy) (*normalizedUploadInput, error) {
-	description := strings.TrimSpace(input.Description)
-	if len([]rune(description)) > s.config.MaxDescriptionLength {
-		return nil, ErrInvalidUploadInput
+func (s *PublicUploadService) publishDirectUploadBatch(
+	ctx context.Context,
+	rootFolder *model.Folder,
+	submissions []model.Submission,
+	adminID string,
+	operatorIP string,
+	reviewedAt time.Time,
+) (*PublicUploadResult, error) {
+	if rootFolder == nil || rootFolder.SourcePath == nil || strings.TrimSpace(*rootFolder.SourcePath) == "" {
+		return nil, ErrUploadFolderNotFound
 	}
 
-	receiptCode, err := normalizeReceiptCode(input.ReceiptCode)
-	if err != nil {
-		return nil, ErrInvalidUploadInput
-	}
+	published := make([]directPublishedUpload, 0, len(submissions))
+	items := make([]repository.ApprovedUploadBatchItem, 0, len(submissions))
+	names := make([]string, 0, len(submissions))
+	rootSourcePath := strings.TrimSpace(*rootFolder.SourcePath)
 
-	if len(input.Files) == 0 {
-		return nil, ErrInvalidUploadInput
-	}
-
-	files := make([]normalizedUploadFile, 0, len(input.Files))
-	for _, item := range input.Files {
-		if isIgnoredUploadFile(item.OriginalName, item.RelativePath) {
-			continue
+	for _, submission := range submissions {
+		relativeDir := repository.NormalizeRelativePathForStorage(filepath.ToSlash(filepath.Dir(submission.RelativePath)))
+		targetDir := rootSourcePath
+		if relativeDir != "" {
+			targetDir = filepath.Join(rootSourcePath, filepath.FromSlash(relativeDir))
+		}
+		if err := s.storage.EnsureManagedDirectory(targetDir); err != nil {
+			rollbackErr := s.rollbackDirectPublishedUploads(published)
+			if rollbackErr != nil {
+				return nil, fmt.Errorf("ensure direct upload target directory failed (%v); rollback failed: %w", err, rollbackErr)
+			}
+			return nil, fmt.Errorf("ensure direct upload target directory: %w", err)
 		}
 
-		originalName := filepath.Base(strings.TrimSpace(item.OriginalName))
-		if originalName == "" || originalName == "." {
-			return nil, ErrInvalidUploadInput
+		finalPath, finalName, err := s.storage.MoveStagedFileToFolder(submission.StagingPath, targetDir, submission.Name)
+		if err != nil {
+			rollbackErr := s.rollbackDirectPublishedUploads(published)
+			if rollbackErr != nil {
+				return nil, fmt.Errorf("direct upload move failed (%v); rollback failed: %w", err, rollbackErr)
+			}
+			return nil, fmt.Errorf("move direct upload into managed folder: %w", err)
 		}
 
-		extension := strings.ToLower(strings.TrimSpace(filepath.Ext(originalName)))
-		if !isAllowedExtension(extension, policy.Upload.AllowedExtensions) {
-			return nil, ErrInvalidFileExtension
-		}
-
-		title := strings.TrimSuffix(originalName, filepath.Ext(originalName))
-		if title == "" {
-			title = originalName
-		}
-
-		relativePath := repository.NormalizeRelativePathForStorage(item.RelativePath)
-		relativeDir := ""
-		if relativePath != "" {
-			relativeDir = repository.NormalizeRelativePathForStorage(filepath.ToSlash(filepath.Dir(relativePath)))
-		}
-
-		files = append(files, normalizedUploadFile{
-			Title:        title,
-			OriginalName: originalName,
-			DeclaredMIME: strings.ToLower(strings.TrimSpace(item.DeclaredMIME)),
-			RelativePath: relativePath,
-			RelativeDir:  relativeDir,
-			Extension:    extension,
-			File:         item.File,
+		finalRelativePath := replaceRelativePathBase(submission.RelativePath, finalName)
+		published = append(published, directPublishedUpload{
+			submission:        submission,
+			finalPath:         finalPath,
+			finalName:         finalName,
+			finalRelativePath: finalRelativePath,
 		})
+		items = append(items, repository.ApprovedUploadBatchItem{
+			SubmissionID:      submission.ID,
+			FinalName:         finalName,
+			FinalRelativePath: finalRelativePath,
+		})
+		names = append(names, finalName)
 	}
 
-	return &normalizedUploadInput{
-		Description:   description,
-		ReceiptCode:   receiptCode,
-		FolderID:      strings.TrimSpace(input.FolderID),
-		UploaderIP:    strings.TrimSpace(input.UploaderIP),
-		DirectPublish: input.DirectPublish,
-		Files:         files,
+	if err := s.repository.CreateApprovedUploadBatch(ctx, rootFolder, submissions, items, adminID, operatorIP, reviewedAt); err != nil {
+		rollbackErr := s.rollbackDirectPublishedUploads(published)
+		if rollbackErr != nil {
+			return nil, fmt.Errorf("persist direct upload failed (%v); rollback failed: %w", err, rollbackErr)
+		}
+		return nil, fmt.Errorf("persist direct upload: %w", err)
+	}
+
+	return &PublicUploadResult{
+		ReceiptCode: submissions[0].ReceiptCode,
+		Status:      model.SubmissionStatusApproved,
+		ItemCount:   len(submissions),
+		Names:       names,
+		UploadedAt:  reviewedAt,
 	}, nil
 }
 
-func (s *PublicUploadService) resolveUploadFileNames(
-	ctx context.Context,
-	rootFolder *model.Folder,
-	rootFolderDisplayPath string,
-	files []normalizedUploadFile,
-) error {
-	if rootFolder == nil || rootFolder.SourcePath == nil || strings.TrimSpace(*rootFolder.SourcePath) == "" {
-		return ErrUploadFolderNotFound
-	}
-
-	pendingPaths, err := s.repository.ListPendingRelativePathsByRootFolderID(ctx, rootFolder.ID)
-	if err != nil {
-		return fmt.Errorf("list pending upload paths: %w", err)
-	}
-
-	reservedByDir := make(map[string]map[string]struct{})
-	for _, pendingPath := range pendingPaths {
-		relativeToRoot := trimRootDisplayPath(rootFolderDisplayPath, pendingPath)
-		if relativeToRoot == "" {
-			continue
-		}
-		dir := repository.NormalizeRelativePathForStorage(filepath.ToSlash(filepath.Dir(relativeToRoot)))
-		name := filepath.Base(relativeToRoot)
-		if name == "" || name == "." {
-			continue
-		}
-		reserveFileName(reservedByDir, dir, name)
-	}
-
-	for index := range files {
-		entry := &files[index]
-		dirKey := repository.NormalizeRelativePathForStorage(entry.RelativeDir)
-		if err := s.seedReservedNamesFromDisk(reservedByDir, *rootFolder.SourcePath, dirKey); err != nil {
+func (s *PublicUploadService) rollbackDirectPublishedUploads(published []directPublishedUpload) error {
+	for i := len(published) - 1; i >= 0; i-- {
+		entry := published[i]
+		if _, err := s.storage.MoveFileBackToStaging(entry.finalPath, entry.submission.StagingPath); err != nil {
 			return err
 		}
-
-		finalName := nextUniqueFileName(reservedByDir, dirKey, entry.OriginalName)
-		entry.OriginalName = finalName
-		entry.Title = strings.TrimSuffix(finalName, filepath.Ext(finalName))
-		if entry.Title == "" {
-			entry.Title = finalName
-		}
-		entry.RelativePath = buildRelativePath(dirKey, finalName)
-	}
-
-	return nil
-}
-
-func (s *PublicUploadService) seedReservedNamesFromDisk(
-	reservedByDir map[string]map[string]struct{},
-	rootSourcePath string,
-	relativeDir string,
-) error {
-	if _, exists := reservedByDir[relativeDir]; exists {
-		return nil
-	}
-
-	reservedByDir[relativeDir] = make(map[string]struct{})
-	targetDir := rootSourcePath
-	if relativeDir != "" {
-		targetDir = filepath.Join(rootSourcePath, filepath.FromSlash(relativeDir))
-	}
-
-	entries, err := os.ReadDir(targetDir)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return fmt.Errorf("inspect upload target directory: %w", err)
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		reservedByDir[relativeDir][strings.ToLower(entry.Name())] = struct{}{}
 	}
 	return nil
 }
 
-func reserveFileName(reservedByDir map[string]map[string]struct{}, relativeDir string, fileName string) {
-	if _, exists := reservedByDir[relativeDir]; !exists {
-		reservedByDir[relativeDir] = make(map[string]struct{})
-	}
-	reservedByDir[relativeDir][strings.ToLower(fileName)] = struct{}{}
-}
-
-func nextUniqueFileName(reservedByDir map[string]map[string]struct{}, relativeDir string, originalName string) string {
-	if _, exists := reservedByDir[relativeDir]; !exists {
-		reservedByDir[relativeDir] = make(map[string]struct{})
-	}
-
-	originalName = filepath.Base(strings.TrimSpace(originalName))
-	ext := filepath.Ext(originalName)
-	base := strings.TrimSuffix(originalName, ext)
-	if base == "" {
-		base = originalName
-	}
-
-	for index := 0; ; index++ {
-		candidate := originalName
-		if index > 0 {
-			candidate = base + "_" + strconv.Itoa(index) + ext
-		}
-		key := strings.ToLower(candidate)
-		if _, exists := reservedByDir[relativeDir][key]; exists {
-			continue
-		}
-		reservedByDir[relativeDir][key] = struct{}{}
-		return candidate
-	}
-}
-
-func buildRelativePath(relativeDir string, fileName string) string {
-	relativeDir = repository.NormalizeRelativePathForStorage(relativeDir)
-	fileName = repository.NormalizeRelativePathForStorage(fileName)
-	if relativeDir == "" {
-		return fileName
-	}
-	return relativeDir + "/" + fileName
-}
-
-func trimRootDisplayPath(rootDisplayPath string, fullPath string) string {
-	rootDisplayPath = repository.NormalizeRelativePathForStorage(rootDisplayPath)
-	fullPath = repository.NormalizeRelativePathForStorage(fullPath)
-	if rootDisplayPath == "" {
-		return fullPath
-	}
-	if fullPath == rootDisplayPath {
-		return ""
-	}
-	prefix := rootDisplayPath + "/"
-	if strings.HasPrefix(fullPath, prefix) {
-		return strings.TrimPrefix(fullPath, prefix)
-	}
-	return fullPath
-}
-
-func isIgnoredUploadFile(originalName string, relativePath string) bool {
-	name := strings.TrimSpace(filepath.Base(originalName))
-	if name == "" && strings.TrimSpace(relativePath) != "" {
-		name = strings.TrimSpace(filepath.Base(filepath.ToSlash(relativePath)))
-	}
-	return strings.EqualFold(name, ".DS_Store")
-}
-
-func (s *PublicUploadService) ensureTargetFolderForUpload(ctx context.Context, rootFolder *model.Folder, relativeDir string, now time.Time) (*model.Folder, error) {
-	if relativeDir == "" {
-		return rootFolder, nil
-	}
-	if rootFolder.SourcePath == nil || strings.TrimSpace(*rootFolder.SourcePath) == "" {
-		return nil, ErrUploadFolderNotFound
-	}
-	if err := s.storage.EnsureManagedDirectory(filepath.Join(*rootFolder.SourcePath, filepath.FromSlash(relativeDir))); err != nil {
-		return nil, fmt.Errorf("ensure upload target directory: %w", err)
-	}
-
-	var targetFolder *model.Folder
-	err := s.repository.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		leaf, ensureErr := repository.EnsureActiveFolderPathTx(tx, rootFolder, relativeDir, now)
-		if ensureErr != nil {
-			return ensureErr
-		}
-		targetFolder = leaf
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("ensure upload folder path: %w", err)
-	}
-	return targetFolder, nil
-}
-
-func (s *PublicUploadService) folderDisplayPath(ctx context.Context, folder *model.Folder) (string, error) {
-	if folder == nil {
-		return "", nil
-	}
-
-	segments := []string{strings.TrimSpace(folder.Name)}
-	parentID := folder.ParentID
-
-	for parentID != nil && strings.TrimSpace(*parentID) != "" {
-		parent, err := s.repository.FindActiveFolderByID(ctx, *parentID)
-		if err != nil {
-			return "", fmt.Errorf("find ancestor folder: %w", err)
-		}
-		if parent == nil {
-			break
-		}
-		segments = append(segments, strings.TrimSpace(parent.Name))
-		parentID = parent.ParentID
-	}
-
-	for i, j := 0, len(segments)-1; i < j; i, j = i+1, j-1 {
-		segments[i], segments[j] = segments[j], segments[i]
-	}
-
-	filtered := make([]string, 0, len(segments))
-	for _, segment := range segments {
-		segment = repository.NormalizeRelativePathForStorage(segment)
-		if segment == "" {
-			continue
-		}
-		filtered = append(filtered, segment)
-	}
-
-	return strings.Join(filtered, "/"), nil
-}
-
-func joinSubmissionPath(basePath, relativePath string) string {
-	basePath = repository.NormalizeRelativePathForStorage(basePath)
-	relativePath = repository.NormalizeRelativePathForStorage(relativePath)
-
-	switch {
-	case basePath == "":
-		return relativePath
-	case relativePath == "":
-		return basePath
-	default:
-		return basePath + "/" + relativePath
-	}
-}
-
-func (s *PublicUploadService) effectivePolicy(ctx context.Context) SystemPolicy {
-	if s.systemSetting == nil {
-		return defaultSystemPolicy(s.config)
-	}
-
-	policy, err := s.systemSetting.GetPolicy(ctx)
-	if err != nil || policy == nil {
-		return defaultSystemPolicy(s.config)
-	}
-
-	return *policy
-}
-
-func (s *PublicUploadService) resolveReceiptCode(ctx context.Context, receiptCode string) (string, error) {
-	return s.receiptCodes.ResolveForSession(ctx, receiptCode)
-}
-
-// retryCreateWithGeneratedReceipt is kept for backward compatibility but
-// receipt code conflicts should no longer occur since the unique constraint
-// was replaced with a regular index.
-
-func isAllowedExtension(extension string, allowedExtensions []string) bool {
-	if len(allowedExtensions) == 0 {
-		return true
-	}
-	for _, allowed := range allowedExtensions {
-		if strings.EqualFold(extension, strings.TrimSpace(allowed)) {
-			return true
+func (s *PublicUploadService) cleanupStagedSubmissions(submissions []model.Submission) {
+	for _, submission := range submissions {
+		if strings.TrimSpace(submission.StagingPath) != "" {
+			_ = s.storage.DeleteStagedFile(submission.StagingPath)
 		}
 	}
-	return false
 }
 
-func (s *PublicUploadService) isAllowedMIME(detectedMIME, declaredMIME string) bool {
-	if len(s.config.AllowedMIMETypes) == 0 {
-		return true
-	}
-	for _, allowed := range s.config.AllowedMIMETypes {
-		if detectedMIME == allowed || declaredMIME == allowed {
-			return true
+func (s *PublicUploadService) cleanupStagedPaths(paths []string) {
+	for _, path := range paths {
+		if strings.TrimSpace(path) != "" {
+			_ = s.storage.DeleteStagedFile(path)
 		}
 	}
-	return false
+}
+
+func (s *PublicUploadService) MaxUploadTotalBytes(ctx context.Context) int64 {
+	policy := s.effectivePolicy(ctx)
+	if policy.Upload.MaxUploadTotalBytes > 0 {
+		return policy.Upload.MaxUploadTotalBytes
+	}
+	return s.config.MaxUploadTotalBytes
 }

@@ -18,7 +18,7 @@ func NewPublicCatalogHandler(service *service.PublicCatalogService) *PublicCatal
 	return &PublicCatalogHandler{service: service}
 }
 
-func (h *PublicCatalogHandler) ListPublicFiles(ctx *gin.Context) {
+func (h *PublicCatalogHandler) ListPublicFolderFiles(ctx *gin.Context) {
 	page, err := parseIntQuery(ctx.Query("page"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid page"})
@@ -31,12 +31,11 @@ func (h *PublicCatalogHandler) ListPublicFiles(ctx *gin.Context) {
 		return
 	}
 
-	result, err := h.service.ListPublicFiles(ctx.Request.Context(), service.PublicFileListInput{
-		FolderID:       ctx.Query("folder_id"),
-		FilterByFolder: ctx.Query("folder_id") != "",
-		Page:           page,
-		PageSize:       pageSize,
-		Sort:           ctx.Query("sort"),
+	result, err := h.service.ListPublicFolderFiles(ctx.Request.Context(), service.PublicFolderFileListInput{
+		FolderID: ctx.Param("folderID"),
+		Page:     page,
+		PageSize: pageSize,
+		Sort:     ctx.Query("sort"),
 	})
 	if err != nil {
 		switch {
@@ -50,6 +49,36 @@ func (h *PublicCatalogHandler) ListPublicFiles(ctx *gin.Context) {
 		return
 	}
 
+	ctx.JSON(http.StatusOK, result)
+}
+
+func (h *PublicCatalogHandler) ListHotFiles(ctx *gin.Context) {
+	limit, err := parseIntQuery(ctx.Query("limit"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
+		return
+	}
+
+	result, err := h.service.ListHotFiles(ctx.Request.Context(), limit)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list hot files"})
+		return
+	}
+	ctx.JSON(http.StatusOK, result)
+}
+
+func (h *PublicCatalogHandler) ListLatestFiles(ctx *gin.Context) {
+	limit, err := parseIntQuery(ctx.Query("limit"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
+		return
+	}
+
+	result, err := h.service.ListLatestFiles(ctx.Request.Context(), limit)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list latest files"})
+		return
+	}
 	ctx.JSON(http.StatusOK, result)
 }
 

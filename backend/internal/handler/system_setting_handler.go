@@ -27,17 +27,6 @@ func (h *SystemSettingHandler) GetPolicy(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, policy)
 }
 
-func (h *SystemSettingHandler) GetPublicPolicy(ctx *gin.Context) {
-	policy, err := h.service.GetPolicy(ctx.Request.Context())
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load system settings"})
-		return
-	}
-	ctx.JSON(http.StatusOK, gin.H{
-		"guest": policy.Guest,
-	})
-}
-
 func (h *SystemSettingHandler) SavePolicy(ctx *gin.Context) {
 	identity, ok := session.GetAdminIdentity(ctx)
 	if !ok {

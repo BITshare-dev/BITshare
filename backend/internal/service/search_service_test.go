@@ -13,36 +13,28 @@ import (
 
 func TestSearchPrefersNameMatchesOverDescription(t *testing.T) {
 	db := newTestSQLite(t)
-	service := NewSearchService(repository.NewSearchRepository(db), nil)
+	service := NewSearchService(repository.NewSearchRepository(db))
 
 	now := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
 	mustCreateSearchFile(t, db, model.File{
 		ID:            "file-name-match",
-		Title:         "logo best",
-		OriginalName:  "logo_best.svg",
+		Name:          "logo_best.svg",
 		Description:   "",
 		Extension:     "svg",
 		Size:          1024,
-		Status:        model.ResourceStatusActive,
 		DownloadCount: 1,
 		CreatedAt:     now,
 		UpdatedAt:     now,
-		DiskPath:      "/tmp/logo_best.svg",
-		StoredName:    "logo_best.svg",
 	})
 	mustCreateSearchFile(t, db, model.File{
 		ID:            "file-description-match",
-		Title:         "meeting notes",
-		OriginalName:  "notes.txt",
+		Name:          "notes.txt",
 		Description:   "contains logo in description only",
 		Extension:     "txt",
 		Size:          2048,
-		Status:        model.ResourceStatusActive,
 		DownloadCount: 80,
 		CreatedAt:     now.Add(1 * time.Hour),
 		UpdatedAt:     now.Add(1 * time.Hour),
-		DiskPath:      "/tmp/notes.txt",
-		StoredName:    "notes.txt",
 	})
 
 	result, err := service.Search(context.Background(), SearchInput{
@@ -67,38 +59,29 @@ func TestSearchPrefersNameMatchesOverDescription(t *testing.T) {
 
 func TestSearchRequiresAllTerms(t *testing.T) {
 	db := newTestSQLite(t)
-	service := NewSearchService(repository.NewSearchRepository(db), nil)
+	service := NewSearchService(repository.NewSearchRepository(db))
 
 	now := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
 	mustCreateSearchFile(t, db, model.File{
-		ID:           "macro-book",
-		Title:        "高鸿业 宏观经济学",
-		OriginalName: "macro.pdf",
-		Extension:    "pdf",
-		Size:         2048,
-		Status:       model.ResourceStatusActive,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-		DiskPath:     "/tmp/macro.pdf",
-		StoredName:   "macro.pdf",
+		ID:        "macro-book",
+		Name:      "高鸿业 宏观经济学.pdf",
+		Extension: "pdf",
+		Size:      2048,
+		CreatedAt: now,
+		UpdatedAt: now,
 	})
 	mustCreateSearchFile(t, db, model.File{
-		ID:           "micro-book",
-		Title:        "高鸿业 微观经济学",
-		OriginalName: "micro.pdf",
-		Extension:    "pdf",
-		Size:         2048,
-		Status:       model.ResourceStatusActive,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-		DiskPath:     "/tmp/micro.pdf",
-		StoredName:   "micro.pdf",
+		ID:        "micro-book",
+		Name:      "高鸿业 微观经济学.pdf",
+		Extension: "pdf",
+		Size:      2048,
+		CreatedAt: now,
+		UpdatedAt: now,
 	})
 	mustCreateSearchFolder(t, db, model.Folder{
 		ID:          "macro-folder",
 		Name:        "宏观专题",
 		Description: "",
-		Status:      model.ResourceStatusActive,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	})
@@ -122,7 +105,7 @@ func TestSearchRequiresAllTerms(t *testing.T) {
 
 func TestSearchPrefersDirectFolderMatchesWithinScope(t *testing.T) {
 	db := newTestSQLite(t)
-	service := NewSearchService(repository.NewSearchRepository(db), nil)
+	service := NewSearchService(repository.NewSearchRepository(db))
 
 	now := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
 	rootID := "folder-root"
@@ -131,7 +114,6 @@ func TestSearchPrefersDirectFolderMatchesWithinScope(t *testing.T) {
 	mustCreateSearchFolder(t, db, model.Folder{
 		ID:        rootID,
 		Name:      "课程资料",
-		Status:    model.ResourceStatusActive,
 		CreatedAt: now,
 		UpdatedAt: now,
 	})
@@ -139,35 +121,26 @@ func TestSearchPrefersDirectFolderMatchesWithinScope(t *testing.T) {
 		ID:        childID,
 		ParentID:  ptrString(rootID),
 		Name:      "归档",
-		Status:    model.ResourceStatusActive,
 		CreatedAt: now,
 		UpdatedAt: now,
 	})
 	mustCreateSearchFile(t, db, model.File{
-		ID:           "direct-file",
-		FolderID:     ptrString(rootID),
-		Title:        "lecture notes",
-		OriginalName: "lecture-direct.pdf",
-		Extension:    "pdf",
-		Size:         2048,
-		Status:       model.ResourceStatusActive,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-		DiskPath:     "/tmp/lecture-direct.pdf",
-		StoredName:   "lecture-direct.pdf",
+		ID:        "direct-file",
+		FolderID:  ptrString(rootID),
+		Name:      "lecture-direct.pdf",
+		Extension: "pdf",
+		Size:      2048,
+		CreatedAt: now,
+		UpdatedAt: now,
 	})
 	mustCreateSearchFile(t, db, model.File{
-		ID:           "nested-file",
-		FolderID:     ptrString(childID),
-		Title:        "lecture notes",
-		OriginalName: "lecture-nested.pdf",
-		Extension:    "pdf",
-		Size:         2048,
-		Status:       model.ResourceStatusActive,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-		DiskPath:     "/tmp/lecture-nested.pdf",
-		StoredName:   "lecture-nested.pdf",
+		ID:        "nested-file",
+		FolderID:  ptrString(childID),
+		Name:      "lecture-nested.pdf",
+		Extension: "pdf",
+		Size:      2048,
+		CreatedAt: now,
+		UpdatedAt: now,
 	})
 
 	result, err := service.Search(context.Background(), SearchInput{
@@ -193,20 +166,16 @@ func TestSearchPrefersDirectFolderMatchesWithinScope(t *testing.T) {
 
 func TestSearchEscapesLikeWildcards(t *testing.T) {
 	db := newTestSQLite(t)
-	service := NewSearchService(repository.NewSearchRepository(db), nil)
+	service := NewSearchService(repository.NewSearchRepository(db))
 
 	now := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
 	mustCreateSearchFile(t, db, model.File{
-		ID:           "plain-file",
-		Title:        "ordinary file",
-		OriginalName: "ordinary.txt",
-		Extension:    "txt",
-		Size:         1024,
-		Status:       model.ResourceStatusActive,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-		DiskPath:     "/tmp/ordinary.txt",
-		StoredName:   "ordinary.txt",
+		ID:        "plain-file",
+		Name:      "ordinary.txt",
+		Extension: "txt",
+		Size:      1024,
+		CreatedAt: now,
+		UpdatedAt: now,
 	})
 
 	result, err := service.Search(context.Background(), SearchInput{

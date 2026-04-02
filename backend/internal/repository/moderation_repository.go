@@ -17,25 +17,21 @@ type ModerationRepository struct {
 }
 
 type PendingSubmissionRow struct {
-	SubmissionID  string
-	ReceiptCode   string
-	Title         string
-	Description   string
-	RelativePath  string
-	Status        model.SubmissionStatus
-	CreatedAt     time.Time
-	FileID        string
-	FileName      string
-	FileSize      int64
-	FileMimeType  string
-	FileDiskPath  string
-	StoredName    string
-	DownloadCount int64
+	SubmissionID string
+	ReceiptCode  string
+	FolderID     *string `gorm:"column:folder_id"`
+	Name         string
+	Description  string
+	RelativePath string
+	ReviewReason string `gorm:"column:review_reason"`
+	Status       model.SubmissionStatus
+	CreatedAt    time.Time
+	Size         int64
+	MimeType     string
 }
 
-type SubmissionWithFile struct {
+type PendingSubmissionRecord struct {
 	Submission model.Submission
-	File       model.File
 }
 
 func NewModerationRepository(db *gorm.DB) *ModerationRepository {
@@ -47,22 +43,18 @@ func (r *ModerationRepository) ListPendingSubmissions(ctx context.Context) ([]Pe
 	err := r.db.WithContext(ctx).
 		Table("submissions").
 		Select(`
-			submissions.id AS submission_id,
-			submissions.receipt_code AS receipt_code,
-			submissions.title_snapshot AS title,
-			submissions.description_snapshot AS description,
-			submissions.relative_path_snapshot AS relative_path,
-			submissions.status AS status,
-			submissions.created_at AS created_at,
-			files.id AS file_id,
-			files.original_name AS file_name,
-			files.size AS file_size,
-			files.mime_type AS file_mime_type,
-			files.disk_path AS file_disk_path,
-			files.stored_name AS stored_name,
-			files.download_count AS download_count
+				submissions.id AS submission_id,
+				submissions.receipt_code AS receipt_code,
+				submissions.folder_id AS folder_id,
+				submissions.name AS name,
+				submissions.description AS description,
+				submissions.relative_path AS relative_path,
+				submissions.review_reason AS review_reason,
+				submissions.status AS status,
+				submissions.created_at AS created_at,
+			submissions.size AS size,
+			submissions.mime_type AS mime_type
 		`).
-		Joins("JOIN files ON files.submission_id = submissions.id").
 		Where("submissions.status = ?", model.SubmissionStatusPending).
 		Order("submissions.created_at DESC").
 		Scan(&rows).
@@ -74,7 +66,7 @@ func (r *ModerationRepository) ListPendingSubmissions(ctx context.Context) ([]Pe
 	return rows, nil
 }
 
-func (r *ModerationRepository) FindPendingSubmission(ctx context.Context, submissionID string) (*SubmissionWithFile, error) {
+func (r *ModerationRepository) FindPendingSubmission(ctx context.Context, submissionID string) (*PendingSubmissionRecord, error) {
 	var submission model.Submission
 	err := r.db.WithContext(ctx).
 		Where("id = ?", submissionID).
@@ -87,19 +79,7 @@ func (r *ModerationRepository) FindPendingSubmission(ctx context.Context, submis
 		return nil, fmt.Errorf("find submission: %w", err)
 	}
 
-	var file model.File
-	err = r.db.WithContext(ctx).
-		Where("submission_id = ?", submission.ID).
-		Take(&file).
-		Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("find file by submission: %w", err)
-	}
-
-	return &SubmissionWithFile{Submission: submission, File: file}, nil
+	return &PendingSubmissionRecord{Submission: submission}, nil
 }
 
 func (r *ModerationRepository) FindFolderByID(ctx context.Context, folderID string) (*model.Folder, error) {
@@ -118,6 +98,10 @@ func (r *ModerationRepository) DB() *gorm.DB {
 	return r.db
 }
 
+func (r *ModerationRepository) BuildFolderDisplayPath(ctx context.Context, folderID *string) (string, error) {
+	return BuildFolderDisplayPath(ctx, r.db, folderID)
+}
+
 func (r *ModerationRepository) ApproveSubmission(
 	ctx context.Context,
 	submissionID string,
@@ -125,10 +109,7 @@ func (r *ModerationRepository) ApproveSubmission(
 	operatorIP string,
 	reviewedAt time.Time,
 	targetFolderID string,
-	finalDiskPath string,
-	finalStoredName string,
-	finalOriginalName string,
-	finalTitle string,
+	finalFileName string,
 	finalRelativePath string,
 ) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -140,52 +121,47 @@ func (r *ModerationRepository) ApproveSubmission(
 			return fmt.Errorf("submission is not pending")
 		}
 
-		var file model.File
-		if err := tx.Where("submission_id = ?", submissionID).Take(&file).Error; err != nil {
-			return fmt.Errorf("reload file: %w", err)
-		}
-
 		reviewerID := adminID
-		if err := tx.Model(&model.File{}).
-			Where("id = ?", file.ID).
-			Updates(map[string]any{
-				"folder_id":      targetFolderID,
-				"title":          finalTitle,
-				"original_name":  finalOriginalName,
-				"status":         model.ResourceStatusActive,
-				"disk_path":      finalDiskPath,
-				"stored_name":    finalStoredName,
-				"updated_at":     reviewedAt,
-			}).Error; err != nil {
-			return fmt.Errorf("approve file: %w", err)
+		fileID, err := newOperationLogID()
+		if err != nil {
+			return fmt.Errorf("generate approved file id: %w", err)
+		}
+		file := &model.File{
+			ID:            fileID,
+			FolderID:      &targetFolderID,
+			Name:          finalFileName,
+			Description:   submission.Description,
+			Extension:     submission.Extension,
+			MimeType:      submission.MimeType,
+			Size:          submission.Size,
+			DownloadCount: 0,
+			CreatedAt:     submission.CreatedAt,
+			UpdatedAt:     reviewedAt,
+		}
+		if err := tx.Create(file).Error; err != nil {
+			return fmt.Errorf("create approved file: %w", err)
 		}
 
 		if err := tx.Model(&model.Submission{}).
 			Where("id = ?", submissionID).
 			Updates(map[string]any{
-				"title_snapshot":         finalTitle,
-				"relative_path_snapshot": finalRelativePath,
-				"status":                 model.SubmissionStatusApproved,
-				"reject_reason":          "",
-				"reviewer_id":            &reviewerID,
-				"reviewed_at":            &reviewedAt,
-				"updated_at":             reviewedAt,
+				"name":          finalFileName,
+				"relative_path": finalRelativePath,
+				"file_id":       fileID,
+				"status":        model.SubmissionStatusApproved,
+				"review_reason": "",
+				"staging_path":  "",
+				"reviewer_id":   &reviewerID,
+				"reviewed_at":   &reviewedAt,
+				"updated_at":    reviewedAt,
 			}).Error; err != nil {
 			return fmt.Errorf("approve submission: %w", err)
 		}
 
-		targetID := targetFolderID
-		if err := model.AdjustFolderStatsTx(tx, &targetID, file.Size, file.DownloadCount, 1); err != nil {
-			return fmt.Errorf("adjust approved folder stats: %w", err)
-		}
 		if err := model.AdjustSystemStatsTx(tx, model.SystemStatsDelta{
-			TotalFiles:         1,
 			PendingSubmissions: -1,
 		}); err != nil {
 			return fmt.Errorf("adjust approved submission system stats: %w", err)
-		}
-		if err := model.AdjustDailyStatsTx(tx, file.CreatedAt, model.DailyStatsDelta{NewFiles: 1}); err != nil {
-			return fmt.Errorf("adjust approved submission daily stats: %w", err)
 		}
 
 		logID, err := newOperationLogID()
@@ -198,7 +174,7 @@ func (r *ModerationRepository) ApproveSubmission(
 			Action:     "submission_approved",
 			TargetType: "submission",
 			TargetID:   submissionID,
-			Detail:     finalOriginalName,
+			Detail:     finalFileName,
 			IP:         operatorIP,
 			CreatedAt:  reviewedAt,
 		}
@@ -227,31 +203,18 @@ func (r *ModerationRepository) RejectSubmission(
 			return fmt.Errorf("submission is not pending")
 		}
 
-		var file model.File
-		if err := tx.Where("submission_id = ?", submissionID).Take(&file).Error; err != nil {
-			return fmt.Errorf("reload file: %w", err)
-		}
-
 		reviewerID := adminID
 		if err := tx.Model(&model.Submission{}).
 			Where("id = ?", submissionID).
 			Updates(map[string]any{
 				"status":        model.SubmissionStatusRejected,
-				"reject_reason": rejectReason,
+				"review_reason": rejectReason,
+				"staging_path":  "",
 				"reviewer_id":   &reviewerID,
 				"reviewed_at":   &reviewedAt,
 				"updated_at":    reviewedAt,
 			}).Error; err != nil {
 			return fmt.Errorf("reject submission: %w", err)
-		}
-
-		if err := tx.Model(&model.File{}).
-			Where("id = ?", file.ID).
-			Updates(map[string]any{
-				"disk_path":  "",
-				"updated_at": reviewedAt,
-			}).Error; err != nil {
-			return fmt.Errorf("touch file after rejection: %w", err)
 		}
 
 		if err := model.AdjustSystemStatsTx(tx, model.SystemStatsDelta{PendingSubmissions: -1}); err != nil {

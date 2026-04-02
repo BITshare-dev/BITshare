@@ -17,10 +17,11 @@ import (
 	"openshare/backend/internal/model"
 )
 
-func TestPublicDownloadServesActiveFile(t *testing.T) {
+func TestPublicDownloadServesManagedFile(t *testing.T) {
 	cfg := newRouterTestConfig(t)
 	db := newRouterTestDB(t)
-	file := createRepositoryFileForDownload(t, cfg, db, model.ResourceStatusActive, "lecture.pdf", []byte("download-content"))
+	folder := createPublicDownloadFolder(t, db, nil, "下载资料")
+	file := createRepositoryFileForDownload(t, cfg, db, folder, "lecture.pdf", []byte("download-content"))
 	engine := New(db, cfg, newRouterSessionManager(db))
 
 	request := httptest.NewRequest(http.MethodGet, "/api/public/files/"+file.ID+"/download", nil)
@@ -43,26 +44,12 @@ func TestPublicDownloadServesActiveFile(t *testing.T) {
 	assertEventuallyDownloadCount(t, db, file.ID, 1)
 }
 
-func TestPublicDownloadRejectsOfflineFile(t *testing.T) {
-	cfg := newRouterTestConfig(t)
-	db := newRouterTestDB(t)
-	file := createRepositoryFileForDownload(t, cfg, db, model.ResourceStatusOffline, "lecture.pdf", []byte("hidden"))
-	engine := New(db, cfg, newRouterSessionManager(db))
-
-	request := httptest.NewRequest(http.MethodGet, "/api/public/files/"+file.ID+"/download", nil)
-	recorder := httptest.NewRecorder()
-	engine.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusNotFound {
-		t.Fatalf("expected status 404, got %d", recorder.Code)
-	}
-}
-
 func TestPublicDownloadReturnsGoneWhenRepositoryFileMissing(t *testing.T) {
 	cfg := newRouterTestConfig(t)
 	db := newRouterTestDB(t)
-	file := createRepositoryFileForDownload(t, cfg, db, model.ResourceStatusActive, "lecture.pdf", []byte("download-content"))
-	if err := os.Remove(file.DiskPath); err != nil {
+	folder := createPublicDownloadFolder(t, db, nil, "下载资料")
+	file := createRepositoryFileForDownload(t, cfg, db, folder, "lecture.pdf", []byte("download-content"))
+	if err := os.Remove(model.BuildManagedFilePath(folder.SourcePath, file.Name)); err != nil {
 		t.Fatalf("remove repository file failed: %v", err)
 	}
 	engine := New(db, cfg, newRouterSessionManager(db))
@@ -79,7 +66,8 @@ func TestPublicDownloadReturnsGoneWhenRepositoryFileMissing(t *testing.T) {
 func TestPublicFileDetailReturnsMetadata(t *testing.T) {
 	cfg := newRouterTestConfig(t)
 	db := newRouterTestDB(t)
-	file := createRepositoryFileForDownload(t, cfg, db, model.ResourceStatusActive, "notes.txt", []byte("hello"))
+	folder := createPublicDownloadFolder(t, db, nil, "下载资料")
+	file := createRepositoryFileForDownload(t, cfg, db, folder, "notes.txt", []byte("hello"))
 	file.MimeType = "text/plain"
 	file.Description = "detail"
 	if err := db.Save(file).Error; err != nil {
@@ -107,23 +95,24 @@ func TestPublicFileDetailReturnsMetadata(t *testing.T) {
 	if response.ID != file.ID || response.Description != "detail" || response.Extension != file.Extension {
 		t.Fatalf("unexpected detail response: %+v", response)
 	}
-	if response.Path != "主页根目录" {
-		t.Fatalf("expected file path %q, got %q", "主页根目录", response.Path)
+	if response.Path != folder.Name {
+		t.Fatalf("expected file path %q, got %q", folder.Name, response.Path)
 	}
-	if response.FolderID != "" {
-		t.Fatalf("expected empty folder_id for root file, got %q", response.FolderID)
+	if response.FolderID != folder.ID {
+		t.Fatalf("expected folder_id %q for managed file, got %q", folder.ID, response.FolderID)
 	}
 }
 
 func TestPublicBatchDownloadStreamsZip(t *testing.T) {
 	cfg := newRouterTestConfig(t)
 	db := newRouterTestDB(t)
-	first := createRepositoryFileForDownload(t, cfg, db, model.ResourceStatusActive, "a.txt", []byte("alpha"))
+	folder := createPublicDownloadFolder(t, db, nil, "批量下载")
+	first := createRepositoryFileForDownload(t, cfg, db, folder, "a.txt", []byte("alpha"))
 	first.MimeType = "text/plain"
 	if err := db.Save(first).Error; err != nil {
 		t.Fatalf("save first batch file failed: %v", err)
 	}
-	second := createRepositoryFileForDownload(t, cfg, db, model.ResourceStatusActive, "b.txt", []byte("beta"))
+	second := createRepositoryFileForDownload(t, cfg, db, folder, "b.txt", []byte("beta"))
 	second.MimeType = "text/plain"
 	if err := db.Save(second).Error; err != nil {
 		t.Fatalf("save second batch file failed: %v", err)
@@ -161,15 +150,13 @@ func TestPublicFolderDownloadStreamsZip(t *testing.T) {
 	rootFolder := createPublicDownloadFolder(t, db, nil, "课程资料")
 	nestedFolder := createPublicDownloadFolder(t, db, &rootFolder.ID, "讲义")
 
-	rootFile := createRepositoryFileForDownload(t, cfg, db, model.ResourceStatusActive, "overview.txt", []byte("overview"))
+	rootFile := createRepositoryFileForDownload(t, cfg, db, rootFolder, "overview.txt", []byte("overview"))
 	rootFile.MimeType = "text/plain"
-	rootFile.FolderID = &rootFolder.ID
 	if err := db.Save(rootFile).Error; err != nil {
 		t.Fatalf("save root folder file failed: %v", err)
 	}
 
-	nestedFile := createRepositoryFileForDownload(t, cfg, db, model.ResourceStatusActive, "chapter1.pdf", []byte("chapter"))
-	nestedFile.FolderID = &nestedFolder.ID
+	nestedFile := createRepositoryFileForDownload(t, cfg, db, nestedFolder, "chapter1.pdf", []byte("chapter"))
 	if err := db.Save(nestedFile).Error; err != nil {
 		t.Fatalf("save nested folder file failed: %v", err)
 	}
@@ -215,28 +202,26 @@ func TestPublicFolderDownloadStreamsZip(t *testing.T) {
 	assertEventuallyDownloadCount(t, db, nestedFile.ID, 1)
 }
 
-func createRepositoryFileForDownload(t *testing.T, cfg config.Config, db *gorm.DB, status model.ResourceStatus, originalName string, content []byte) *model.File {
+func createRepositoryFileForDownload(t *testing.T, cfg config.Config, db *gorm.DB, folder *model.Folder, originalName string, content []byte) *model.File {
 	t.Helper()
 
 	now := time.Date(2026, 3, 12, 15, 0, 0, 0, time.UTC)
-	storedName := mustNewID(t) + filepath.Ext(originalName)
-	diskPath := filepath.Join(cfg.Storage.Root, storedName)
+	if folder == nil || folder.SourcePath == nil {
+		t.Fatal("createRepositoryFileForDownload requires a folder with source_path")
+	}
+	diskPath := filepath.Join(*folder.SourcePath, originalName)
 	if err := os.WriteFile(diskPath, content, 0o644); err != nil {
 		t.Fatalf("write file for download failed: %v", err)
 	}
 
 	file := &model.File{
 		ID:            mustNewID(t),
-		Title:         "公开资料",
-		OriginalName:  originalName,
-		StoredName:    storedName,
+		FolderID:      &folder.ID,
+		Name:          originalName,
 		Extension:     filepath.Ext(originalName),
 		MimeType:      "application/pdf",
 		Size:          int64(len(content)),
-		DiskPath:      diskPath,
-		Status:        status,
 		DownloadCount: 0,
-		UploaderIP:    "127.0.0.1",
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
@@ -251,13 +236,17 @@ func createPublicDownloadFolder(t *testing.T, db *gorm.DB, parentID *string, nam
 	t.Helper()
 
 	now := time.Date(2026, 3, 12, 15, 0, 0, 0, time.UTC)
+	sourcePath := filepath.Join(t.TempDir(), name)
+	if err := os.MkdirAll(sourcePath, 0o755); err != nil {
+		t.Fatalf("create public download folder path failed: %v", err)
+	}
 	folder := &model.Folder{
-		ID:        mustNewID(t),
-		ParentID:  parentID,
-		Name:      name,
-		Status:    model.ResourceStatusActive,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:         mustNewID(t),
+		ParentID:   parentID,
+		Name:       name,
+		SourcePath: &sourcePath,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 	if err := db.Create(folder).Error; err != nil {
 		t.Fatalf("create public download folder failed: %v", err)

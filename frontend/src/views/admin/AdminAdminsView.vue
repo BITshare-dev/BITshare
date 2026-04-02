@@ -41,7 +41,7 @@ const sessionStore = useSessionStore();
 const canManageAdmins = computed(() => sessionStore.hasPermission("manage_admins"));
 
 const permissionOptions = [
-  { value: "submission_moderation", label: "上传审核 / 免审上传" },
+  { value: "submission_moderation", label: "上传审核" },
   { value: "resource_moderation", label: "反馈处理 / 编辑资料 / 删除资料" },
   { value: "announcements", label: "公告" },
 ];

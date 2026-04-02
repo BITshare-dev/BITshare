@@ -45,13 +45,31 @@ type StorageConfig struct {
 }
 
 type UploadConfig struct {
-	MaxFileSizeBytes       int64    `json:"max_file_size_bytes"`
-	MaxBatchTotalSizeBytes int64    `json:"max_batch_total_size_bytes"`
-	AllowedExtensions      []string `json:"allowed_extensions"`
-	AllowedMIMETypes       []string `json:"allowed_mime_types"`
-	MaxTitleLength         int      `json:"max_title_length"`
-	MaxDescriptionLength   int      `json:"max_description_length"`
-	ReceiptCodeLength      int      `json:"receipt_code_length"`
+	MaxUploadTotalBytes  int64 `json:"max_upload_total_bytes"`
+	MaxDescriptionLength int   `json:"max_description_length"`
+	ReceiptCodeLength    int   `json:"receipt_code_length"`
+}
+
+func (c *UploadConfig) UnmarshalJSON(data []byte) error {
+	type uploadConfigAlias struct {
+		MaxUploadTotalBytes  int64 `json:"max_upload_total_bytes"`
+		MaxFileSizeBytes     int64 `json:"max_file_size_bytes"`
+		MaxDescriptionLength int   `json:"max_description_length"`
+		ReceiptCodeLength    int   `json:"receipt_code_length"`
+	}
+
+	var raw uploadConfigAlias
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	c.MaxUploadTotalBytes = raw.MaxUploadTotalBytes
+	if c.MaxUploadTotalBytes <= 0 {
+		c.MaxUploadTotalBytes = raw.MaxFileSizeBytes
+	}
+	c.MaxDescriptionLength = raw.MaxDescriptionLength
+	c.ReceiptCodeLength = raw.ReceiptCodeLength
+	return nil
 }
 
 type SessionConfig struct {
@@ -96,15 +114,11 @@ func Default() Config {
 			Staging: "staging",
 			Trash:   "trash",
 		},
-		Upload: UploadConfig{
-			MaxFileSizeBytes:       5 << 30,
-			MaxBatchTotalSizeBytes: 20 << 30,
-			AllowedExtensions:      []string{},
-			AllowedMIMETypes:       []string{},
-			MaxTitleLength:         200,
-			MaxDescriptionLength:   4000,
-			ReceiptCodeLength:      12,
-		},
+			Upload: UploadConfig{
+				MaxUploadTotalBytes:  5 << 30,
+				MaxDescriptionLength: 4000,
+				ReceiptCodeLength:    12,
+			},
 		Session: SessionConfig{
 			Name:            "openshare_session",
 			Secret:          "replace-this-in-local-config",
@@ -180,9 +194,8 @@ func applyEnv(cfg *Config) error {
 	overrideString("OPENSHARE_STORAGE_ROOT", &cfg.Storage.Root)
 	overrideString("OPENSHARE_STORAGE_STAGING", &cfg.Storage.Staging)
 	overrideString("OPENSHARE_STORAGE_TRASH", &cfg.Storage.Trash)
-	overrideInt64("OPENSHARE_UPLOAD_MAX_FILE_SIZE_BYTES", &cfg.Upload.MaxFileSizeBytes, &errs)
-	overrideInt64("OPENSHARE_UPLOAD_MAX_BATCH_TOTAL_SIZE_BYTES", &cfg.Upload.MaxBatchTotalSizeBytes, &errs)
-	overrideInt("OPENSHARE_UPLOAD_MAX_TITLE_LENGTH", &cfg.Upload.MaxTitleLength, &errs)
+	overrideInt64("OPENSHARE_UPLOAD_MAX_FILE_SIZE_BYTES", &cfg.Upload.MaxUploadTotalBytes, &errs)
+	overrideInt64("OPENSHARE_UPLOAD_MAX_UPLOAD_TOTAL_BYTES", &cfg.Upload.MaxUploadTotalBytes, &errs)
 	overrideInt("OPENSHARE_UPLOAD_MAX_DESCRIPTION_LENGTH", &cfg.Upload.MaxDescriptionLength, &errs)
 	overrideInt("OPENSHARE_UPLOAD_RECEIPT_CODE_LENGTH", &cfg.Upload.ReceiptCodeLength, &errs)
 	overrideString("OPENSHARE_SESSION_NAME", &cfg.Session.Name)
@@ -229,14 +242,8 @@ func (c Config) Validate() error {
 	if c.Storage.Trash == "" {
 		return errors.New("storage.trash must not be empty")
 	}
-	if c.Upload.MaxFileSizeBytes <= 0 {
-		return errors.New("upload.max_file_size_bytes must be greater than 0")
-	}
-	if c.Upload.MaxBatchTotalSizeBytes < c.Upload.MaxFileSizeBytes {
-		return errors.New("upload.max_batch_total_size_bytes must be greater than or equal to upload.max_file_size_bytes")
-	}
-	if c.Upload.MaxTitleLength <= 0 {
-		return errors.New("upload.max_title_length must be greater than 0")
+	if c.Upload.MaxUploadTotalBytes <= 0 {
+		return errors.New("upload.max_upload_total_bytes must be greater than 0")
 	}
 	if c.Upload.MaxDescriptionLength <= 0 {
 		return errors.New("upload.max_description_length must be greater than 0")
@@ -295,8 +302,6 @@ func (c *Config) normalize() {
 	c.Storage.Root = strings.TrimSpace(c.Storage.Root)
 	c.Storage.Staging = strings.TrimSpace(c.Storage.Staging)
 	c.Storage.Trash = strings.TrimSpace(c.Storage.Trash)
-	c.Upload.AllowedExtensions = normalizeStringSlice(c.Upload.AllowedExtensions, true)
-	c.Upload.AllowedMIMETypes = normalizeStringSlice(c.Upload.AllowedMIMETypes, true)
 }
 
 func validateRateLimit(prefix string, rule RateLimitRule) error {

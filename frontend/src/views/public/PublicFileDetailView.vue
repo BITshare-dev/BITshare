@@ -12,12 +12,11 @@ import { renderSimpleMarkdown } from "../../lib/markdown";
 
 interface FileDetailResponse {
   id: string;
-  title: string;
+  name: string;
   extension: string;
   folder_id: string;
   path: string;
   description: string;
-  original_name: string;
   mime_type: string;
   size: number;
   uploaded_at: string;
@@ -57,7 +56,7 @@ const primaryDetailRows = computed(() => {
   }
 
   return [
-    { label: "文件名", value: detail.value.original_name },
+    { label: "文件名", value: detail.value.name },
     { label: "所属文件夹", value: detail.value.path || "主页根目录" },
   ];
 });
@@ -78,7 +77,7 @@ const editorDirty = computed(() => {
   }
 
   return (
-    editFileName.value.trim() !== detail.value.original_name ||
+    editFileName.value.trim() !== detail.value.name ||
     editDescription.value.trim() !== (detail.value.description ?? "")
   );
 });
@@ -98,7 +97,7 @@ async function loadDetail() {
   try {
     detail.value = await httpClient.get<FileDetailResponse>(`/public/files/${encodeURIComponent(fileID.value)}`);
     if (detail.value) {
-      editFileName.value = detail.value.original_name;
+      editFileName.value = detail.value.name;
       editDescription.value = detail.value.description;
     }
   } catch (err: unknown) {
@@ -117,7 +116,7 @@ async function loadAdminPermission() {
 }
 
 function openDescriptionEditor() {
-  editFileName.value = detail.value?.original_name ?? "";
+  editFileName.value = detail.value?.name ?? "";
   editDescription.value = detail.value?.description ?? "";
   saveError.value = "";
   message.value = "";
@@ -128,7 +127,7 @@ function closeDescriptionEditor() {
   descriptionEditorOpen.value = false;
   saving.value = false;
   saveError.value = "";
-  editFileName.value = detail.value?.original_name ?? "";
+  editFileName.value = detail.value?.name ?? "";
   editDescription.value = detail.value?.description ?? "";
 }
 
@@ -163,8 +162,8 @@ function closeDeleteDialog() {
 
 async function saveDescription() {
   if (!detail.value || !editorDirty.value) return;
-  const parsed = splitEditableFileName(editFileName.value);
-  if (!parsed) {
+  const normalizedName = editFileName.value.trim();
+  if (!normalizedName) {
     saveError.value = "请输入有效的文件名。";
     return;
   }
@@ -175,8 +174,7 @@ async function saveDescription() {
     await httpClient.request(`/admin/resources/files/${encodeURIComponent(detail.value.id)}`, {
       method: "PUT",
       body: {
-        title: parsed.title,
-        extension: parsed.extension,
+        name: normalizedName,
         description: editDescription.value.trim(),
       },
     });
@@ -224,10 +222,9 @@ async function submitFeedback() {
   feedbackMessage.value = "";
   feedbackError.value = "";
   try {
-    const response = await httpClient.post<{ receipt_code: string }>("/public/reports", {
+    const response = await httpClient.post<{ receipt_code: string }>("/public/feedback", {
       file_id: detail.value.id,
       folder_id: "",
-      reason: "content_error",
       description: feedbackDescription.value.trim(),
     });
     feedbackMessage.value = `反馈已提交，请保存回执码 ${response.receipt_code}。`;
@@ -239,7 +236,7 @@ async function submitFeedback() {
     if (err instanceof HttpError && err.status === 400) {
       feedbackError.value = "请填写问题说明。";
     } else if (err instanceof HttpError && err.status === 404) {
-      feedbackError.value = "文件不存在或已下线。";
+      feedbackError.value = "目标不存在或已删除。";
     } else {
       feedbackError.value = "提交反馈失败。";
     }
@@ -267,28 +264,6 @@ function formatSize(size: number) {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function normalizeExtensionInput(value: string) {
-  return value.trim().replace(/^\.+/, "").toLowerCase();
-}
-
-function splitEditableFileName(value: string) {
-  const normalized = value.trim();
-  if (!normalized) {
-    return null;
-  }
-  const lastDot = normalized.lastIndexOf(".");
-  if (lastDot <= 0 || lastDot === normalized.length - 1) {
-    return {
-      title: normalized,
-      extension: "",
-    };
-  }
-  return {
-    title: normalized.slice(0, lastDot).trim(),
-    extension: normalizeExtensionInput(normalized.slice(lastDot + 1)),
-  };
 }
 
 function goBack() {
@@ -433,7 +408,7 @@ function downloadFile() {
             <h3 class="text-lg font-semibold text-slate-900">确认删除文件</h3>
             <p class="mt-2 text-sm leading-6 text-slate-500">
               删除后将无法恢复。确认删除
-              <span class="font-medium text-slate-900">{{ detail.original_name }}</span>
+              <span class="font-medium text-slate-900">{{ detail.name }}</span>
               吗？
             </p>
           </div>
@@ -493,7 +468,7 @@ function downloadFile() {
             <div class="mt-6 space-y-5">
               <div class="rounded-2xl border border-slate-200 bg-[#fafafafa] px-4 py-3">
                 <p class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">当前对象</p>
-                <p class="mt-1 text-sm leading-6 text-slate-700">{{ detail.original_name }}</p>
+                <p class="mt-1 text-sm leading-6 text-slate-700">{{ detail.name }}</p>
               </div>
 
               <label class="space-y-2">

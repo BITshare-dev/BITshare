@@ -27,22 +27,21 @@ type PublicDownloadService struct {
 }
 
 type DownloadableFile struct {
-	FileID       string
-	OriginalName string
-	MimeType     string
-	Size         int64
-	ModTime      time.Time
-	Content      *os.File
+	FileID   string
+	FileName string
+	MimeType string
+	Size     int64
+	ModTime  time.Time
+	Content  *os.File
 }
 
 type PublicFileDetail struct {
 	ID            string    `json:"id"`
-	Title         string    `json:"title"`
+	Name          string    `json:"name"`
 	Extension     string    `json:"extension"`
 	FolderID      string    `json:"folder_id"`
 	Path          string    `json:"path"`
 	Description   string    `json:"description"`
-	OriginalName  string    `json:"original_name"`
 	MimeType      string    `json:"mime_type"`
 	Size          int64     `json:"size"`
 	UploadedAt    time.Time `json:"uploaded_at"`
@@ -50,10 +49,10 @@ type PublicFileDetail struct {
 }
 
 type BatchDownloadFile struct {
-	FileID       string
-	OriginalName string
-	DiskPath     string
-	ZipPath      string
+	FileID   string
+	FileName string
+	DiskPath string
+	ZipPath  string
 }
 
 type FolderDownload struct {
@@ -75,7 +74,7 @@ func (s *PublicDownloadService) PrepareDownload(ctx context.Context, fileID stri
 		return nil, ErrDownloadFileNotFound
 	}
 
-	file, err := s.repository.FindActiveFileByID(ctx, fileID)
+	file, err := s.repository.FindManagedFileByID(ctx, fileID)
 	if err != nil {
 		return nil, fmt.Errorf("find downloadable file: %w", err)
 	}
@@ -83,7 +82,12 @@ func (s *PublicDownloadService) PrepareDownload(ctx context.Context, fileID stri
 		return nil, ErrDownloadFileNotFound
 	}
 
-	opened, err := s.storage.OpenManagedFile(file.DiskPath)
+	diskPath, err := s.resolveManagedFilePath(ctx, file)
+	if err != nil {
+		return nil, fmt.Errorf("resolve downloadable file path: %w", err)
+	}
+
+	opened, err := s.storage.OpenManagedFile(diskPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrDownloadFileUnavailable
@@ -92,12 +96,12 @@ func (s *PublicDownloadService) PrepareDownload(ctx context.Context, fileID stri
 	}
 
 	return &DownloadableFile{
-		FileID:       file.ID,
-		OriginalName: file.OriginalName,
-		MimeType:     file.MimeType,
-		Size:         opened.Info.Size(),
-		ModTime:      opened.Info.ModTime(),
-		Content:      opened.File,
+		FileID:   file.ID,
+		FileName: file.Name,
+		MimeType: file.MimeType,
+		Size:     opened.Info.Size(),
+		ModTime:  opened.Info.ModTime(),
+		Content:  opened.File,
 	}, nil
 }
 
@@ -106,7 +110,7 @@ func (s *PublicDownloadService) GetFileDetail(ctx context.Context, fileID string
 	if fileID == "" {
 		return nil, ErrDownloadFileNotFound
 	}
-	file, err := s.repository.FindActiveFileByID(ctx, fileID)
+	file, err := s.repository.FindManagedFileByID(ctx, fileID)
 	if err != nil {
 		return nil, fmt.Errorf("find public file detail: %w", err)
 	}
@@ -121,12 +125,11 @@ func (s *PublicDownloadService) GetFileDetail(ctx context.Context, fileID string
 
 	return &PublicFileDetail{
 		ID:            file.ID,
-		Title:         file.Title,
+		Name:          file.Name,
 		Extension:     file.Extension,
 		FolderID:      strings.TrimSpace(optionalString(file.FolderID)),
 		Path:          fullPath,
 		Description:   file.Description,
-		OriginalName:  file.OriginalName,
 		MimeType:      file.MimeType,
 		Size:          file.Size,
 		UploadedAt:    file.CreatedAt,
@@ -150,7 +153,7 @@ func (s *PublicDownloadService) buildFilePath(ctx context.Context, file *model.F
 		seen[currentID] = struct{}{}
 		folderIDs = append(folderIDs, currentID)
 
-		folders, err := s.repository.ListActiveFoldersByIDs(ctx, []string{currentID})
+		folders, err := s.repository.ListManagedFoldersByIDs(ctx, []string{currentID})
 		if err != nil {
 			return "", err
 		}
@@ -160,12 +163,12 @@ func (s *PublicDownloadService) buildFilePath(ctx context.Context, file *model.F
 		currentID = strings.TrimSpace(*folders[0].ParentID)
 	}
 
-	folders, err := s.repository.ListActiveFoldersByIDs(ctx, folderIDs)
+	folders, err := s.repository.ListManagedFoldersByIDs(ctx, folderIDs)
 	if err != nil {
 		return "", err
 	}
 
-	byID := make(map[string]repository.ActiveFolderNode, len(folders))
+	byID := make(map[string]repository.ManagedFolderNode, len(folders))
 	for _, folder := range folders {
 		byID[folder.ID] = folder
 	}
@@ -197,13 +200,51 @@ func optionalString(value *string) string {
 	return *value
 }
 
+func (s *PublicDownloadService) resolveManagedFilePath(ctx context.Context, file *model.File) (string, error) {
+	if file == nil {
+		return "", ErrDownloadFileNotFound
+	}
+	if file.FolderID == nil || strings.TrimSpace(*file.FolderID) == "" {
+		return "", ErrDownloadFileUnavailable
+	}
+
+	folders, err := s.repository.ListManagedFoldersByIDs(ctx, []string{strings.TrimSpace(*file.FolderID)})
+	if err != nil {
+		return "", err
+	}
+	if len(folders) == 0 {
+		return "", ErrDownloadFileUnavailable
+	}
+
+	return s.resolveManagedFilePathFromFolderMap(*file, map[string]repository.ManagedFolderNode{
+		folders[0].ID: folders[0],
+	})
+}
+
+func (s *PublicDownloadService) resolveManagedFilePathFromFolderMap(file model.File, folderByID map[string]repository.ManagedFolderNode) (string, error) {
+	if file.FolderID == nil || strings.TrimSpace(*file.FolderID) == "" {
+		return "", ErrDownloadFileUnavailable
+	}
+
+	folder, ok := folderByID[strings.TrimSpace(*file.FolderID)]
+	if !ok {
+		return "", ErrDownloadFileUnavailable
+	}
+
+	filePath := model.BuildManagedFilePath(folder.SourcePath, file.Name)
+	if filePath == "" {
+		return "", ErrDownloadFileUnavailable
+	}
+	return filePath, nil
+}
+
 func (s *PublicDownloadService) PrepareBatchDownload(ctx context.Context, fileIDs []string) ([]BatchDownloadFile, error) {
 	normalized := normalizeBatchFileIDs(fileIDs)
 	if len(normalized) == 0 {
 		return nil, ErrBatchDownloadInvalid
 	}
 
-	files, err := s.repository.ListActiveFilesByIDs(ctx, normalized)
+	files, err := s.repository.ListManagedFilesByIDs(ctx, normalized)
 	if err != nil {
 		return nil, fmt.Errorf("list batch download files: %w", err)
 	}
@@ -211,9 +252,19 @@ func (s *PublicDownloadService) PrepareBatchDownload(ctx context.Context, fileID
 		return nil, ErrDownloadFileNotFound
 	}
 
+	folderByID, err := s.folderMapForFiles(ctx, files)
+	if err != nil {
+		return nil, fmt.Errorf("load folder download paths: %w", err)
+	}
+
 	items := make([]BatchDownloadFile, 0, len(files))
 	for _, file := range files {
-		opened, err := s.storage.OpenManagedFile(file.DiskPath)
+		filePath, err := s.resolveManagedFilePathFromFolderMap(file, folderByID)
+		if err != nil {
+			return nil, err
+		}
+
+		opened, err := s.storage.OpenManagedFile(filePath)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				return nil, ErrDownloadFileUnavailable
@@ -223,10 +274,10 @@ func (s *PublicDownloadService) PrepareBatchDownload(ctx context.Context, fileID
 		opened.File.Close()
 
 		items = append(items, BatchDownloadFile{
-			FileID:       file.ID,
-			OriginalName: file.OriginalName,
-			DiskPath:     file.DiskPath,
-			ZipPath:      file.OriginalName,
+			FileID:   file.ID,
+			FileName: file.Name,
+			DiskPath: filePath,
+			ZipPath:  file.Name,
 		})
 	}
 	return items, nil
@@ -269,7 +320,7 @@ func (s *PublicDownloadService) PrepareFolderDownload(ctx context.Context, folde
 		return nil, ErrDownloadFolderNotFound
 	}
 
-	root, err := s.repository.FindActiveFolderByID(ctx, folderID)
+	root, err := s.repository.FindManagedFolderByID(ctx, folderID)
 	if err != nil {
 		return nil, fmt.Errorf("find downloadable folder: %w", err)
 	}
@@ -279,11 +330,19 @@ func (s *PublicDownloadService) PrepareFolderDownload(ctx context.Context, folde
 
 	parentByFolder := map[string]string{root.ID: ""}
 	nameByFolder := map[string]string{root.ID: root.Name}
+	folderByID := map[string]repository.ManagedFolderNode{
+		root.ID: {
+			ID:         root.ID,
+			ParentID:   root.ParentID,
+			Name:       root.Name,
+			SourcePath: root.SourcePath,
+		},
+	}
 	allFolderIDs := []string{root.ID}
 	currentLevel := []string{root.ID}
 
 	for len(currentLevel) > 0 {
-		children, err := s.repository.ListActiveFoldersByParentIDs(ctx, currentLevel)
+		children, err := s.repository.ListManagedFoldersByParentIDs(ctx, currentLevel)
 		if err != nil {
 			return nil, fmt.Errorf("list descendant folders: %w", err)
 		}
@@ -291,6 +350,7 @@ func (s *PublicDownloadService) PrepareFolderDownload(ctx context.Context, folde
 		nextLevel := make([]string, 0, len(children))
 		for _, child := range children {
 			nameByFolder[child.ID] = child.Name
+			folderByID[child.ID] = child
 			if child.ParentID != nil {
 				parentByFolder[child.ID] = *child.ParentID
 			}
@@ -300,14 +360,19 @@ func (s *PublicDownloadService) PrepareFolderDownload(ctx context.Context, folde
 		currentLevel = nextLevel
 	}
 
-	files, err := s.repository.ListActiveFilesByFolderIDs(ctx, allFolderIDs)
+	files, err := s.repository.ListManagedFilesByFolderIDs(ctx, allFolderIDs)
 	if err != nil {
 		return nil, fmt.Errorf("list folder download files: %w", err)
 	}
 
 	items := make([]BatchDownloadFile, 0, len(files))
 	for _, file := range files {
-		opened, err := s.storage.OpenManagedFile(file.DiskPath)
+		filePath, err := s.resolveManagedFilePathFromFolderMap(file, folderByID)
+		if err != nil {
+			return nil, err
+		}
+
+		opened, err := s.storage.OpenManagedFile(filePath)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				return nil, ErrDownloadFileUnavailable
@@ -317,10 +382,10 @@ func (s *PublicDownloadService) PrepareFolderDownload(ctx context.Context, folde
 		opened.File.Close()
 
 		items = append(items, BatchDownloadFile{
-			FileID:       file.ID,
-			OriginalName: file.OriginalName,
-			DiskPath:     file.DiskPath,
-			ZipPath:      buildFolderZipPath(file.OriginalName, file.FolderID, parentByFolder, nameByFolder),
+			FileID:   file.ID,
+			FileName: file.Name,
+			DiskPath: filePath,
+			ZipPath:  buildFolderZipPath(file.Name, file.FolderID, parentByFolder, nameByFolder),
 		})
 	}
 
@@ -353,6 +418,33 @@ func normalizeBatchFileIDs(fileIDs []string) []string {
 		normalized = append(normalized, fileID)
 	}
 	return normalized
+}
+
+func (s *PublicDownloadService) folderMapForFiles(ctx context.Context, files []model.File) (map[string]repository.ManagedFolderNode, error) {
+	folderIDs := make([]string, 0, len(files))
+	seen := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		if file.FolderID == nil || strings.TrimSpace(*file.FolderID) == "" {
+			continue
+		}
+		folderID := strings.TrimSpace(*file.FolderID)
+		if _, ok := seen[folderID]; ok {
+			continue
+		}
+		seen[folderID] = struct{}{}
+		folderIDs = append(folderIDs, folderID)
+	}
+
+	rows, err := s.repository.ListManagedFoldersByIDs(ctx, folderIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]repository.ManagedFolderNode, len(rows))
+	for _, row := range rows {
+		result[row.ID] = row
+	}
+	return result, nil
 }
 
 func buildFolderZipPath(fileName string, folderID *string, parentByFolder map[string]string, nameByFolder map[string]string) string {

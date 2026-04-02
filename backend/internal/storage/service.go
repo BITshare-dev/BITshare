@@ -15,6 +15,7 @@ import (
 
 var ErrFileTooLarge = fmt.Errorf("file too large")
 var ErrManagedDirectoryConflict = fmt.Errorf("managed directory conflict")
+var ErrManagedFileConflict = fmt.Errorf("managed file conflict")
 
 const maxStoredNameAttempts = 5
 
@@ -24,9 +25,8 @@ type Service struct {
 }
 
 type StagedFile struct {
-	StoredName string
-	DiskPath   string
-	Size       int64
+	DiskPath string
+	Size     int64
 }
 
 type OpenedFile struct {
@@ -81,16 +81,15 @@ func (s *Service) SaveToStaging(reader io.Reader, extension string, maxBytes int
 		return nil, fmt.Errorf("close staging file: %w", err)
 	}
 
-	finalPath, storedName, err := s.claimStoredPath(tempPath, extension)
+	finalPath, _, err := s.claimStoredPath(tempPath, extension)
 	if err != nil {
 		_ = os.Remove(tempPath)
 		return nil, err
 	}
 
 	return &StagedFile{
-		StoredName: storedName,
-		DiskPath:   finalPath,
-		Size:       written,
+		DiskPath: finalPath,
+		Size:     written,
 	}, nil
 }
 
@@ -177,16 +176,15 @@ func (s *Service) MoveStagedFileToFolder(stagedPath, targetDir, originalName str
 	return "", "", fmt.Errorf("all candidate filenames are taken in target directory")
 }
 
-// MoveFileBackToStaging moves an approved file back to staging for rollback.
-func (s *Service) MoveFileBackToStaging(diskPath, storedName string) (string, error) {
-	if strings.TrimSpace(storedName) == "" {
-		return "", fmt.Errorf("stored name must not be empty")
+// MoveFileBackToStaging moves an approved file back to its original staging path for rollback.
+func (s *Service) MoveFileBackToStaging(diskPath, stagingPath string) (string, error) {
+	if !s.isWithinDir(stagingPath, s.stagingDir) {
+		return "", fmt.Errorf("target staging path is outside staging directory")
 	}
-	finalPath := filepath.Join(s.stagingDir, storedName)
-	if err := os.Rename(diskPath, finalPath); err != nil {
+	if err := os.Rename(diskPath, stagingPath); err != nil {
 		return "", fmt.Errorf("move file back to staging: %w", err)
 	}
-	return finalPath, nil
+	return stagingPath, nil
 }
 
 // OpenManagedFile opens any file tracked by the system (imported or uploaded).
@@ -333,6 +331,41 @@ func (s *Service) RenameManagedDirectory(dirPath, newName string) (string, error
 			return "", ErrManagedDirectoryConflict
 		}
 		return "", fmt.Errorf("rename managed directory: %w", err)
+	}
+	return targetPath, nil
+}
+
+func (s *Service) RenameManagedFile(filePath, newName string) (string, error) {
+	filePath = filepath.Clean(strings.TrimSpace(filePath))
+	newName = filepath.Base(strings.TrimSpace(newName))
+	if filePath == "" || newName == "" || newName == "." || newName == ".." {
+		return "", fmt.Errorf("file path and new name must not be empty")
+	}
+
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return "", fmt.Errorf("stat managed file: %w", err)
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("managed path is not a file")
+	}
+
+	parentDir := filepath.Dir(filePath)
+	targetPath := filepath.Join(parentDir, newName)
+	if targetPath == filePath {
+		return filePath, nil
+	}
+	if _, err := os.Stat(targetPath); err == nil {
+		return "", ErrManagedFileConflict
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("inspect managed file target: %w", err)
+	}
+
+	if err := os.Rename(filePath, targetPath); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return "", ErrManagedFileConflict
+		}
+		return "", fmt.Errorf("rename managed file: %w", err)
 	}
 	return targetPath, nil
 }

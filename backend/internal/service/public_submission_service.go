@@ -23,12 +23,11 @@ type PublicSubmissionLookupResult struct {
 }
 
 type PublicSubmissionItem struct {
-	Title         string                 `json:"title"`
-	RelativePath  string                 `json:"relative_path"`
-	Status        model.SubmissionStatus `json:"status"`
-	UploadedAt    time.Time              `json:"uploaded_at"`
-	DownloadCount int64                  `json:"download_count"`
-	RejectReason  string                 `json:"reject_reason"`
+	Name         string                 `json:"name"`
+	RelativePath string                 `json:"relative_path"`
+	Status       model.SubmissionStatus `json:"status"`
+	UploadedAt   time.Time              `json:"uploaded_at"`
+	ReviewReason string                 `json:"review_reason"`
 }
 
 func NewPublicSubmissionService(repository *repository.PublicSubmissionRepository) *PublicSubmissionService {
@@ -53,14 +52,27 @@ func (s *PublicSubmissionService) LookupByReceiptCode(ctx context.Context, recei
 	}
 
 	items := make([]PublicSubmissionItem, 0, len(rows))
+	displayPathByFolder := make(map[string]string)
 	for _, row := range rows {
+		displayPath := repository.NormalizeRelativePathForStorage(row.RelativePath)
+		if row.FolderID != nil && strings.TrimSpace(*row.FolderID) != "" {
+			folderID := strings.TrimSpace(*row.FolderID)
+			rootDisplayPath, exists := displayPathByFolder[folderID]
+			if !exists {
+				rootDisplayPath, err = s.repository.BuildFolderDisplayPath(ctx, row.FolderID)
+				if err != nil {
+					return nil, fmt.Errorf("build submission display path: %w", err)
+				}
+				displayPathByFolder[folderID] = rootDisplayPath
+			}
+			displayPath = repository.BuildSubmissionDisplayPath(rootDisplayPath, row.RelativePath)
+		}
 		items = append(items, PublicSubmissionItem{
-			Title:         row.TitleSnapshot,
-			RelativePath:  row.RelativePath,
-			Status:        row.Status,
-			UploadedAt:    row.CreatedAt.UTC(),
-			DownloadCount: row.DownloadCount,
-			RejectReason:  row.RejectReason,
+			Name:         row.Name,
+			RelativePath: displayPath,
+			Status:       row.Status,
+			UploadedAt:   row.CreatedAt.UTC(),
+			ReviewReason: row.ReviewReason,
 		})
 	}
 

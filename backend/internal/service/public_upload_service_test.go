@@ -32,9 +32,8 @@ func TestCreateSubmissionReusesExistingReceiptCode(t *testing.T) {
 		FolderID:    folderID,
 		Files: []PublicUploadFileInput{
 			{
-				OriginalName: "notes.pdf",
-				DeclaredMIME: "application/pdf",
-				File:         strings.NewReader("%PDF-1.4 test document"),
+				Name: "notes.pdf",
+				File: strings.NewReader("%PDF-1.4 test document"),
 			},
 		},
 	})
@@ -59,9 +58,8 @@ func TestCreateSubmissionReturnsReceiptGenerationError(t *testing.T) {
 		FolderID: folderID,
 		Files: []PublicUploadFileInput{
 			{
-				OriginalName: "notes.pdf",
-				DeclaredMIME: "application/pdf",
-				File:         strings.NewReader("%PDF-1.4 test document"),
+				Name: "notes.pdf",
+				File: strings.NewReader("%PDF-1.4 test document"),
 			},
 		},
 	})
@@ -80,13 +78,12 @@ func TestCreateSubmissionIgnoresDSStoreFiles(t *testing.T) {
 		FolderID: folderID,
 		Files: []PublicUploadFileInput{
 			{
-				OriginalName: ".DS_Store",
-				File:         strings.NewReader("ignored"),
+				Name: ".DS_Store",
+				File: strings.NewReader("ignored"),
 			},
 			{
-				OriginalName: "notes.pdf",
-				DeclaredMIME: "application/pdf",
-				File:         strings.NewReader("%PDF-1.4 test document"),
+				Name: "notes.pdf",
+				File: strings.NewReader("%PDF-1.4 test document"),
 			},
 		},
 	})
@@ -103,6 +100,58 @@ func TestCreateSubmissionIgnoresDSStoreFiles(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("expected 1 stored submission, got %d", count)
+	}
+}
+
+func TestCreateSubmissionDirectPublishesForModerationAdmin(t *testing.T) {
+	cfg, db, storageService := newUploadTestDeps(t)
+	repo := repository.NewUploadRepository(db)
+	service := NewPublicUploadService(cfg.Upload, repo, NewReceiptCodeService(repository.NewReceiptCodeRepository(db), cfg.Upload.ReceiptCodeLength), storageService, nil)
+	folderID := createUploadTargetFolder(t, db)
+	adminID := createUploadTestAdmin(t, db)
+
+	ctx := WithPublicUploadActor(context.Background(), PublicUploadActor{
+		AdminID:          adminID,
+		CanDirectPublish: true,
+	})
+	result, err := service.CreateSubmission(ctx, PublicUploadInput{
+		FolderID: folderID,
+		Files: []PublicUploadFileInput{
+			{
+				Name: "notes.pdf",
+				File: strings.NewReader("%PDF-1.4 test document"),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected direct publish success, got %v", err)
+	}
+	if result.Status != model.SubmissionStatusApproved {
+		t.Fatalf("expected approved status, got %q", result.Status)
+	}
+
+	var submission model.Submission
+	if err := db.Where("name = ?", "notes.pdf").Take(&submission).Error; err != nil {
+		t.Fatalf("query submission failed: %v", err)
+	}
+	if submission.Status != model.SubmissionStatusApproved {
+		t.Fatalf("expected approved submission, got %q", submission.Status)
+	}
+	if submission.FileID == nil {
+		t.Fatal("expected approved submission to link managed file")
+	}
+
+	var file model.File
+	if err := db.Where("id = ?", *submission.FileID).Take(&file).Error; err != nil {
+		t.Fatalf("query managed file failed: %v", err)
+	}
+	var folder model.Folder
+	if err := db.Where("id = ?", folderID).Take(&folder).Error; err != nil {
+		t.Fatalf("query folder failed: %v", err)
+	}
+	filePath := model.BuildManagedFilePath(folder.SourcePath, file.Name)
+	if _, err := os.Stat(filePath); err != nil {
+		t.Fatalf("expected managed file to exist, got %v", err)
 	}
 }
 
@@ -141,10 +190,10 @@ func createExistingSubmission(t *testing.T, db *gorm.DB, receiptCode string) {
 	t.Helper()
 
 	submission := &model.Submission{
-		ID:            mustNewUploadID(t),
-		ReceiptCode:   receiptCode,
-		TitleSnapshot: "existing",
-		Status:        model.SubmissionStatusPending,
+		ID:          mustNewUploadID(t),
+		ReceiptCode: receiptCode,
+		Name:        "existing.pdf",
+		Status:      model.SubmissionStatusPending,
 	}
 	if err := db.Create(submission).Error; err != nil {
 		t.Fatalf("create existing submission failed: %v", err)
@@ -164,12 +213,30 @@ func createUploadTargetFolder(t *testing.T, db *gorm.DB) string {
 		ID:         folderID,
 		Name:       "upload-target",
 		SourcePath: &sourcePath,
-		Status:     model.ResourceStatusActive,
 	}
 	if err := db.Create(folder).Error; err != nil {
 		t.Fatalf("create upload target folder failed: %v", err)
 	}
 	return folderID
+}
+
+func createUploadTestAdmin(t *testing.T, db *gorm.DB) string {
+	t.Helper()
+
+	adminID := mustNewUploadID(t)
+	admin := &model.Admin{
+		ID:           adminID,
+		Username:     "upload-reviewer",
+		DisplayName:  "Upload Reviewer",
+		PasswordHash: "hashed-password",
+		Role:         string(model.AdminRoleAdmin),
+		Permissions:  string(model.AdminPermissionSubmissionModeration),
+		Status:       model.AdminStatusActive,
+	}
+	if err := db.Create(admin).Error; err != nil {
+		t.Fatalf("create upload test admin failed: %v", err)
+	}
+	return adminID
 }
 
 func mustNewUploadID(t *testing.T) string {

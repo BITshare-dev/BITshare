@@ -30,24 +30,6 @@ const (
 	SubmissionStatusRejected SubmissionStatus = "rejected"
 )
 
-// ResourceStatus represents the visibility state of a file or folder.
-type ResourceStatus string
-
-const (
-	ResourceStatusActive  ResourceStatus = "active"
-	ResourceStatusOffline ResourceStatus = "offline"
-	ResourceStatusDeleted ResourceStatus = "deleted"
-)
-
-// ReportStatus represents the moderation state of a user report.
-type ReportStatus string
-
-const (
-	ReportStatusPending  ReportStatus = "pending"
-	ReportStatusApproved ReportStatus = "approved"
-	ReportStatusRejected ReportStatus = "rejected"
-)
-
 // AnnouncementStatus represents the publish state of an announcement.
 type AnnouncementStatus string
 
@@ -55,6 +37,15 @@ const (
 	AnnouncementStatusDraft     AnnouncementStatus = "draft"
 	AnnouncementStatusPublished AnnouncementStatus = "published"
 	AnnouncementStatusHidden    AnnouncementStatus = "hidden"
+)
+
+// FeedbackStatus represents the moderation state of a feedback record.
+type FeedbackStatus string
+
+const (
+	FeedbackStatusPending  FeedbackStatus = "pending"
+	FeedbackStatusApproved FeedbackStatus = "approved"
+	FeedbackStatusRejected FeedbackStatus = "rejected"
 )
 
 // ---------------------------------------------------------------------------
@@ -79,18 +70,16 @@ type Admin struct {
 
 // Folder is the hierarchical container for files and subfolders.
 type Folder struct {
-	ID            EntityID       `gorm:"column:id;type:text;primaryKey"`
-	ParentID      *EntityID      `gorm:"column:parent_id;type:text;index:idx_folders_parent_id_status"`
-	SourcePath    *string        `gorm:"column:source_path;type:text;uniqueIndex:ux_folders_source_path"`
-	Name          string         `gorm:"column:name;type:text;not null"`
-	Description   string         `gorm:"column:description;type:text;not null;default:''"`
-	FileCount     int64          `gorm:"column:file_count;type:integer;not null;default:0"`
-	TotalSize     int64          `gorm:"column:total_size;type:integer;not null;default:0"`
-	DownloadCount int64          `gorm:"column:download_count;type:integer;not null;default:0"`
-	Status        ResourceStatus `gorm:"column:status;type:text;not null;default:'active';index:idx_folders_parent_id_status;index:idx_folders_status_created_at"`
-	CreatedAt     time.Time      `gorm:"column:created_at;autoCreateTime;index:idx_folders_status_created_at,sort:desc"`
-	UpdatedAt     time.Time      `gorm:"column:updated_at;autoUpdateTime"`
-	DeletedAt     *time.Time     `gorm:"column:deleted_at;type:datetime"`
+	ID            EntityID  `gorm:"column:id;type:text;primaryKey"`
+	ParentID      *EntityID `gorm:"column:parent_id;type:text;index:idx_folders_parent_id_status"`
+	SourcePath    *string   `gorm:"column:source_path;type:text;uniqueIndex:ux_folders_source_path"`
+	Name          string    `gorm:"column:name;type:text;not null"`
+	Description   string    `gorm:"column:description;type:text;not null;default:''"`
+	FileCount     int64     `gorm:"column:file_count;type:integer;not null;default:0"`
+	TotalSize     int64     `gorm:"column:total_size;type:integer;not null;default:0"`
+	DownloadCount int64     `gorm:"column:download_count;type:integer;not null;default:0"`
+	CreatedAt     time.Time `gorm:"column:created_at;autoCreateTime;index:idx_folders_created_at,sort:desc"`
+	UpdatedAt     time.Time `gorm:"column:updated_at;autoUpdateTime"`
 
 	// Relations
 	Parent   *Folder  `gorm:"foreignKey:ParentID"`
@@ -98,78 +87,70 @@ type Folder struct {
 	Files    []File   `gorm:"foreignKey:FolderID"`
 }
 
-// File is the published or offline resource metadata stored in SQLite.
+// File is the managed resource metadata stored in SQLite.
 type File struct {
-	ID            EntityID       `gorm:"column:id;type:text;primaryKey"`
-	FolderID      *EntityID      `gorm:"column:folder_id;type:text;index:idx_files_folder_id_status"`
-	SubmissionID  *EntityID      `gorm:"column:submission_id;type:text;index:idx_files_submission_id"`
-	SourcePath    *string        `gorm:"column:source_path;type:text;uniqueIndex:ux_files_source_path"`
-	Title         string         `gorm:"column:title;type:text;not null"`
-	Description   string         `gorm:"column:description;type:text;not null;default:''"`
-	OriginalName  string         `gorm:"column:original_name;type:text;not null"`
-	StoredName    string         `gorm:"column:stored_name;type:text;not null"`
-	Extension     string         `gorm:"column:extension;type:text;not null;default:''"`
-	MimeType      string         `gorm:"column:mime_type;type:text;not null;default:''"`
-	Size          int64          `gorm:"column:size;type:integer;not null;default:0"`
-	DiskPath      string         `gorm:"column:disk_path;type:text;not null"`
-	Status        ResourceStatus `gorm:"column:status;type:text;not null;default:'active';index:idx_files_folder_id_status;index:idx_files_status_created_at"`
-	DownloadCount int64          `gorm:"column:download_count;type:integer;not null;default:0"`
-	UploaderIP    string         `gorm:"column:uploader_ip;type:text;not null;default:''"`
-	CreatedAt     time.Time      `gorm:"column:created_at;autoCreateTime;index:idx_files_status_created_at,sort:desc"`
-	UpdatedAt     time.Time      `gorm:"column:updated_at;autoUpdateTime"`
-	DeletedAt     *time.Time     `gorm:"column:deleted_at;type:datetime"`
+	ID            EntityID  `gorm:"column:id;type:text;primaryKey"`
+	FolderID      *EntityID `gorm:"column:folder_id;type:text;index:idx_files_folder_id"`
+	Name          string    `gorm:"column:name;type:text;not null;default:''"`
+	Description   string    `gorm:"column:description;type:text;not null;default:''"`
+	Extension     string    `gorm:"column:extension;type:text;not null;default:''"`
+	MimeType      string    `gorm:"column:mime_type;type:text;not null;default:''"`
+	Size          int64     `gorm:"column:size;type:integer;not null;default:0"`
+	DownloadCount int64     `gorm:"column:download_count;type:integer;not null;default:0"`
+	CreatedAt     time.Time `gorm:"column:created_at;autoCreateTime;index:idx_files_created_at,sort:desc"`
+	UpdatedAt     time.Time `gorm:"column:updated_at;autoUpdateTime"`
 
 	// Relations
-	Folder     *Folder     `gorm:"foreignKey:FolderID"`
-	Submission *Submission `gorm:"foreignKey:SubmissionID"`
+	Folder *Folder `gorm:"foreignKey:FolderID"`
 }
 
 // Submission tracks an upload request from staging through moderation.
 type Submission struct {
-	ID                   EntityID         `gorm:"column:id;type:text;primaryKey"`
-	ReceiptCode          string           `gorm:"column:receipt_code;type:text;not null;index:idx_submissions_receipt_code"`
-	TitleSnapshot        string           `gorm:"column:title_snapshot;type:text;not null"`
-	DescriptionSnapshot  string           `gorm:"column:description_snapshot;type:text;not null;default:''"`
-	RelativePathSnapshot string           `gorm:"column:relative_path_snapshot;type:text;not null;default:''"`
-	Status               SubmissionStatus `gorm:"column:status;type:text;not null;default:'pending';index:idx_submissions_status_created_at"`
-	RejectReason         string           `gorm:"column:reject_reason;type:text;not null;default:''"`
-	UploaderIP           string           `gorm:"column:uploader_ip;type:text;not null;default:''"`
-	ReviewerID           *EntityID        `gorm:"column:reviewer_id;type:text;index:idx_submissions_reviewer_id_reviewed_at"`
-	ReviewedAt           *time.Time       `gorm:"column:reviewed_at;type:datetime;index:idx_submissions_reviewer_id_reviewed_at,sort:desc;index:idx_submissions_reviewed_at,sort:desc"`
-	CreatedAt            time.Time        `gorm:"column:created_at;autoCreateTime;index:idx_submissions_status_created_at,sort:desc"`
-	UpdatedAt            time.Time        `gorm:"column:updated_at;autoUpdateTime"`
+	ID           EntityID         `gorm:"column:id;type:text;primaryKey"`
+	ReceiptCode  string           `gorm:"column:receipt_code;type:text;not null;index:idx_submissions_receipt_code"`
+	FolderID     *EntityID        `gorm:"column:folder_id;type:text;index:idx_submissions_folder_id"`
+	FileID       *EntityID        `gorm:"column:file_id;type:text;index:idx_submissions_file_id"`
+	Name         string           `gorm:"column:name;type:text;not null;default:''"`
+	Description  string           `gorm:"column:description;type:text;not null;default:''"`
+	RelativePath string           `gorm:"column:relative_path;type:text;not null;default:''"`
+	Extension    string           `gorm:"column:extension;type:text;not null;default:''"`
+	MimeType     string           `gorm:"column:mime_type;type:text;not null;default:''"`
+	Size         int64            `gorm:"column:size;type:integer;not null;default:0"`
+	StagingPath  string           `gorm:"column:staging_path;type:text;not null;default:''"`
+	Status       SubmissionStatus `gorm:"column:status;type:text;not null;default:'pending';index:idx_submissions_status_created_at"`
+	ReviewReason string           `gorm:"column:review_reason;type:text;not null;default:''"`
+	UploaderIP   string           `gorm:"column:uploader_ip;type:text;not null;default:''"`
+	ReviewerID   *EntityID        `gorm:"column:reviewer_id;type:text;index:idx_submissions_reviewer_id_reviewed_at"`
+	ReviewedAt   *time.Time       `gorm:"column:reviewed_at;type:datetime;index:idx_submissions_reviewer_id_reviewed_at,sort:desc;index:idx_submissions_reviewed_at,sort:desc"`
+	CreatedAt    time.Time        `gorm:"column:created_at;autoCreateTime;index:idx_submissions_status_created_at,sort:desc"`
+	UpdatedAt    time.Time        `gorm:"column:updated_at;autoUpdateTime"`
 
 	// Relations
-	Reviewer *Admin `gorm:"foreignKey:ReviewerID"`
-	File     *File  `gorm:"foreignKey:SubmissionID"` // has-one via File.SubmissionID
+	Reviewer *Admin  `gorm:"foreignKey:ReviewerID"`
+	Folder   *Folder `gorm:"foreignKey:FolderID;constraint:OnDelete:SET NULL;"`
+	File     *File   `gorm:"foreignKey:FileID;constraint:OnDelete:SET NULL;"`
 }
 
-// ---------------------------------------------------------------------------
-// Governance entities
-// ---------------------------------------------------------------------------
+// Feedback stores user feedback against a managed file or folder.
+type Feedback struct {
+	ID           EntityID       `gorm:"column:id;type:text;primaryKey"`
+	ReceiptCode  string         `gorm:"column:receipt_code;type:text;not null;default:'';index:idx_feedbacks_receipt_code"`
+	FileID       *EntityID      `gorm:"column:file_id;type:text;index:idx_feedbacks_file_id"`
+	FolderID     *EntityID      `gorm:"column:folder_id;type:text;index:idx_feedbacks_folder_id"`
+	TargetName   string         `gorm:"column:target_name;type:text;not null;default:''"`
+	TargetPath   string         `gorm:"column:target_path;type:text;not null;default:''"`
+	TargetType   string         `gorm:"column:target_type;type:text;not null;default:''"`
+	Description  string         `gorm:"column:description;type:text;not null;default:''"`
+	ReporterIP   string         `gorm:"column:reporter_ip;type:text;not null;default:''"`
+	Status       FeedbackStatus `gorm:"column:status;type:text;not null;default:'pending';index:idx_feedbacks_status_created_at"`
+	ReviewReason string         `gorm:"column:review_reason;type:text;not null;default:''"`
+	ReviewerID   *EntityID      `gorm:"column:reviewer_id;type:text;index:idx_feedbacks_reviewer_id_reviewed_at"`
+	ReviewedAt   *time.Time     `gorm:"column:reviewed_at;type:datetime;index:idx_feedbacks_reviewer_id_reviewed_at,sort:desc"`
+	CreatedAt    time.Time      `gorm:"column:created_at;autoCreateTime;index:idx_feedbacks_status_created_at,sort:desc"`
+	UpdatedAt    time.Time      `gorm:"column:updated_at;autoUpdateTime"`
 
-// Report captures user complaints against a file or folder.
-// Constraint: exactly one of FileID or FolderID must be non-nil.
-type Report struct {
-	ID           EntityID     `gorm:"column:id;type:text;primaryKey"`
-	ReceiptCode  string       `gorm:"column:receipt_code;type:text;not null;default:'';index:idx_reports_receipt_code"`
-	FileID       *EntityID    `gorm:"column:file_id;type:text;index:idx_reports_file_id"`
-	FolderID     *EntityID    `gorm:"column:folder_id;type:text;index:idx_reports_folder_id"`
-	TargetName   string       `gorm:"column:target_name;type:text;not null;default:''"`
-	TargetPath   string       `gorm:"column:target_path;type:text;not null;default:''"`
-	TargetType   string       `gorm:"column:target_type;type:text;not null;default:''"`
-	Reason       string       `gorm:"column:reason;type:text;not null"`
-	Description  string       `gorm:"column:description;type:text;not null;default:''"`
-	ReporterIP   string       `gorm:"column:reporter_ip;type:text;not null;default:''"`
-	Status       ReportStatus `gorm:"column:status;type:text;not null;default:'pending';index:idx_reports_status_created_at"`
-	ReviewReason string       `gorm:"column:review_reason;type:text;not null;default:''"`
-	ReviewerID   *EntityID    `gorm:"column:reviewer_id;type:text;index:idx_reports_reviewer_id_reviewed_at"`
-	ReviewedAt   *time.Time   `gorm:"column:reviewed_at;type:datetime;index:idx_reports_reviewer_id_reviewed_at,sort:desc"`
-	CreatedAt    time.Time    `gorm:"column:created_at;autoCreateTime;index:idx_reports_status_created_at,sort:desc"`
-	UpdatedAt    time.Time    `gorm:"column:updated_at;autoUpdateTime"`
-
-	File     *File   `gorm:"foreignKey:FileID"`
-	Folder   *Folder `gorm:"foreignKey:FolderID"`
+	File     *File   `gorm:"foreignKey:FileID;constraint:OnDelete:SET NULL;"`
+	Folder   *Folder `gorm:"foreignKey:FolderID;constraint:OnDelete:SET NULL;"`
 	Reviewer *Admin  `gorm:"foreignKey:ReviewerID"`
 }
 
@@ -240,7 +221,7 @@ type SystemStat struct {
 	TotalFiles         int64     `gorm:"column:total_files;type:integer;not null;default:0"`
 	TotalDownloads     int64     `gorm:"column:total_downloads;type:integer;not null;default:0"`
 	PendingSubmissions int64     `gorm:"column:pending_submissions;type:integer;not null;default:0"`
-	PendingReports     int64     `gorm:"column:pending_reports;type:integer;not null;default:0"`
+	PendingFeedbacks   int64     `gorm:"column:pending_feedbacks;type:integer;not null;default:0"`
 	CreatedAt          time.Time `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt          time.Time `gorm:"column:updated_at;autoUpdateTime"`
 }
@@ -274,7 +255,7 @@ func (Admin) TableName() string          { return "admins" }
 func (Folder) TableName() string         { return "folders" }
 func (File) TableName() string           { return "files" }
 func (Submission) TableName() string     { return "submissions" }
-func (Report) TableName() string         { return "reports" }
+func (Feedback) TableName() string       { return "feedbacks" }
 func (Announcement) TableName() string   { return "announcements" }
 func (OperationLog) TableName() string   { return "operation_logs" }
 func (AdminSession) TableName() string   { return "admin_sessions" }

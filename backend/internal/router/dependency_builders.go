@@ -22,13 +22,13 @@ func buildRouteRepositories(db *gorm.DB) *routeRepositories {
 		admin:              repository.NewAdminRepository(db),
 		adminDashboard:     repository.NewAdminDashboardRepository(db),
 		announcement:       repository.NewAnnouncementRepository(db),
+		feedback:           repository.NewFeedbackRepository(db),
 		imports:            repository.NewImportRepository(db),
 		moderation:         repository.NewModerationRepository(db),
 		operationLog:       repository.NewOperationLogRepository(db),
 		publicCatalog:      repository.NewPublicCatalogRepository(db),
 		publicDownload:     repository.NewPublicDownloadRepository(db),
 		publicSubmission:   repository.NewPublicSubmissionRepository(db),
-		report:             repository.NewReportRepository(db),
 		resourceManagement: repository.NewResourceManagementRepository(db),
 		search:             repository.NewSearchRepository(db),
 		siteVisit:          repository.NewSiteVisitRepository(db),
@@ -48,13 +48,14 @@ func buildRouteServices(
 	receiptCodeService := service.NewReceiptCodeService(repos.receiptCode, cfg.Upload.ReceiptCodeLength)
 	systemSettingService := service.NewSystemSettingService(repos.systemSetting, cfg)
 	adminAuthService := service.NewAdminAuthService(db, repos.admin, sessionManager)
-	searchService := service.NewSearchService(repos.search, systemSettingService)
+	searchService := service.NewSearchService(repos.search)
 
 	return &routeServices{
 		adminAuth:          adminAuthService,
 		adminDashboard:     service.NewAdminDashboardService(repos.adminDashboard),
 		announcement:       service.NewAnnouncementService(repos.announcement, repos.admin),
 		adminManagement:    service.NewAdminManagementService(repos.admin),
+		feedback:           service.NewFeedbackService(repos.feedback, receiptCodeService),
 		imports:            service.NewImportService(repos.imports, storageService),
 		moderation:         service.NewModerationService(repos.moderation, storageService),
 		operationLog:       service.NewOperationLogService(repos.operationLog),
@@ -63,8 +64,7 @@ func buildRouteServices(
 		publicReceipt:      receiptCodeService,
 		publicSubmission:   service.NewPublicSubmissionService(repos.publicSubmission),
 		publicUpload:       service.NewPublicUploadService(cfg.Upload, repos.upload, receiptCodeService, storageService, systemSettingService),
-		report:             service.NewReportService(repos.report, receiptCodeService),
-		resourceManagement: service.NewResourceManagementServiceWithSettings(repos.resourceManagement, storageService, systemSettingService),
+		resourceManagement: service.NewResourceManagementService(repos.resourceManagement, storageService),
 		search:             searchService,
 		siteVisit:          service.NewSiteVisitService(repos.siteVisit),
 		systemSetting:      systemSettingService,
@@ -77,6 +77,7 @@ func buildHandlers(cfg config.Config, sessionManager *session.Manager, services 
 		adminDashboard:     handler.NewAdminDashboardHandler(services.adminDashboard),
 		announcement:       handler.NewAnnouncementHandler(services.announcement),
 		adminManagement:    handler.NewAdminManagementHandler(services.adminManagement, services.adminAuth),
+		feedback:           handler.NewFeedbackHandler(services.feedback),
 		imports:            handler.NewImportHandler(services.imports, services.adminAuth),
 		moderation:         handler.NewModerationHandler(services.moderation),
 		operationLog:       handler.NewOperationLogHandler(services.operationLog),
@@ -84,8 +85,7 @@ func buildHandlers(cfg config.Config, sessionManager *session.Manager, services 
 		publicDownload:     handler.NewPublicDownloadHandler(services.publicDownload),
 		publicReceipt:      handler.NewPublicReceiptHandler(services.publicReceipt),
 		publicSubmission:   handler.NewPublicSubmissionHandler(services.publicSubmission),
-		publicUpload:       handler.NewPublicUploadHandler(services.publicUpload, services.systemSetting, cfg.Upload.MaxBatchTotalSizeBytes+(1<<20)),
-		report:             handler.NewReportHandler(services.report),
+		publicUpload:       handler.NewPublicUploadHandler(services.publicUpload),
 		resourceManagement: handler.NewResourceManagementHandler(services.resourceManagement, services.adminAuth),
 		search:             handler.NewSearchHandler(services.search),
 		siteVisit:          handler.NewSiteVisitHandler(services.siteVisit),

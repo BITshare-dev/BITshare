@@ -10,12 +10,11 @@ import { clearStoredReceiptCode, ensureSessionReceiptCode, readStoredReceiptCode
 interface SubmissionLookupResponse {
   receipt_code: string;
   items: Array<{
-    title: string;
+    name: string;
     relative_path: string;
     status: string;
     uploaded_at: string;
-    download_count: number;
-    reject_reason?: string;
+    review_reason?: string;
   }>;
 }
 
@@ -25,8 +24,8 @@ interface FeedbackLookupResponse {
     target_name: string;
     target_path: string;
     description: string;
-    review_reason: string;
     status: string;
+    review_reason: string;
     created_at: string;
     reviewed_at: string | null;
   }>;
@@ -41,13 +40,13 @@ const feedbackLookupResult = ref<FeedbackLookupResponse | null>(null);
 const receiptRecords = computed(() => {
   const submissionItems = (submissionLookupResult.value?.items ?? []).map((item) => ({
     kind: "submission" as const,
-    key: `submission-${item.title}-${item.uploaded_at}`,
+    key: `submission-${item.name}-${item.uploaded_at}`,
     status: item.status,
     title: submissionDisplayName(item),
     createdAt: item.uploaded_at,
     relativePath: item.relative_path,
     description: "",
-    reviewReason: item.reject_reason ?? "",
+    reviewReason: item.review_reason ?? "",
   }));
 
   const feedbackItems = (feedbackLookupResult.value?.items ?? []).map((item) => ({
@@ -68,7 +67,6 @@ const receiptRecords = computed(() => {
 
 onMounted(() => {
   void syncSessionReceiptCode();
-  localStorage.removeItem("openshare_feedback_receipt_code");
 });
 
 async function lookupReceipt() {
@@ -87,7 +85,7 @@ async function lookupReceipt() {
 
   const [submissionResult, feedbackResult] = await Promise.allSettled([
     httpClient.get<SubmissionLookupResponse>(`/public/submissions/${encodeURIComponent(code)}`),
-    httpClient.get<FeedbackLookupResponse>(`/public/reports/${encodeURIComponent(code)}`),
+    httpClient.get<FeedbackLookupResponse>(`/public/feedback/${encodeURIComponent(code)}`),
   ]);
 
   const submissionError = submissionResult.status === "rejected" ? submissionResult.reason : null;
@@ -123,7 +121,6 @@ function clearReceipt() {
   submissionLookupResult.value = null;
   feedbackLookupResult.value = null;
   lookupError.value = "";
-  localStorage.removeItem("openshare_feedback_receipt_code");
   void syncSessionReceiptCode();
 }
 
@@ -145,11 +142,11 @@ function formatDate(value: string) {
 function submissionDisplayName(item: SubmissionLookupResponse["items"][number]) {
   const relativePath = item.relative_path?.trim();
   if (!relativePath) {
-    return item.title;
+    return item.name;
   }
 
   const segments = relativePath.split("/").filter(Boolean);
-  return segments[segments.length - 1] || item.title;
+  return segments[segments.length - 1] || item.name;
 }
 
 function submissionStatusLabel(status: string) {

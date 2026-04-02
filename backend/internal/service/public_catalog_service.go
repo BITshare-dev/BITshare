@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"openshare/backend/internal/model"
 	"openshare/backend/internal/repository"
 )
 
@@ -25,25 +26,27 @@ type PublicCatalogService struct {
 	repository *repository.PublicCatalogRepository
 }
 
-type PublicFileListInput struct {
-	FolderID       string
-	FilterByFolder bool // true when the caller explicitly wants to browse within a folder
-	Page           int
-	PageSize       int
-	Sort           string
+type PublicFolderFileListInput struct {
+	FolderID string
+	Page     int
+	PageSize int
+	Sort     string
 }
 
-type PublicFileListResult struct {
+type PublicFolderFileListResult struct {
 	Items    []PublicFileItem `json:"items"`
 	Page     int              `json:"page"`
 	PageSize int              `json:"page_size"`
 	Total    int64            `json:"total"`
 }
 
+type PublicFileFeedResult struct {
+	Items []PublicFileItem `json:"items"`
+}
+
 type PublicFileItem struct {
 	ID            string    `json:"id"`
-	Title         string    `json:"title"`
-	OriginalName  string    `json:"original_name"`
+	Name          string    `json:"name"`
 	Description   string    `json:"description"`
 	Extension     string    `json:"extension"`
 	UploadedAt    time.Time `json:"uploaded_at"`
@@ -82,53 +85,44 @@ func NewPublicCatalogService(repository *repository.PublicCatalogRepository) *Pu
 	return &PublicCatalogService{repository: repository}
 }
 
-func (s *PublicCatalogService) ListPublicFiles(ctx context.Context, input PublicFileListInput) (*PublicFileListResult, error) {
-	normalized, err := normalizePublicFileListInput(input)
+func (s *PublicCatalogService) ListPublicFolderFiles(ctx context.Context, input PublicFolderFileListInput) (*PublicFolderFileListResult, error) {
+	normalized, err := normalizePublicFolderFileListInput(input)
 	if err != nil {
 		return nil, err
 	}
 
-	if normalized.FolderID != nil {
-		exists, err := s.repository.FolderExists(ctx, *normalized.FolderID)
-		if err != nil {
-			return nil, fmt.Errorf("validate folder: %w", err)
-		}
-		if !exists {
-			return nil, ErrFolderNotFound
-		}
+	exists, err := s.repository.FolderExists(ctx, normalized.FolderID)
+	if err != nil {
+		return nil, fmt.Errorf("validate folder: %w", err)
+	}
+	if !exists {
+		return nil, ErrFolderNotFound
 	}
 
-	files, total, err := s.repository.ListPublicFiles(ctx, repository.PublicFileListQuery{
-		FolderID:       normalized.FolderID,
-		FilterByFolder: normalized.FilterByFolder,
-		Offset:         (normalized.Page - 1) * normalized.PageSize,
-		Limit:          normalized.PageSize,
-		OrderBy:        normalized.OrderBy,
+	files, total, err := s.repository.ListPublicFolderFiles(ctx, repository.PublicFolderFileListQuery{
+		FolderID: normalized.FolderID,
+		Offset:   (normalized.Page - 1) * normalized.PageSize,
+		Limit:    normalized.PageSize,
+		OrderBy:  normalized.OrderBy,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("list public files: %w", err)
+		return nil, fmt.Errorf("list public folder files: %w", err)
 	}
 
-	items := make([]PublicFileItem, 0, len(files))
-	for _, file := range files {
-		items = append(items, PublicFileItem{
-			ID:            file.ID,
-			Title:         file.Title,
-			OriginalName:  file.OriginalName,
-			Description:   file.Description,
-			Extension:     file.Extension,
-			UploadedAt:    file.CreatedAt,
-			DownloadCount: file.DownloadCount,
-			Size:          file.Size,
-		})
-	}
-
-	return &PublicFileListResult{
-		Items:    items,
+	return &PublicFolderFileListResult{
+		Items:    mapPublicFileItems(files),
 		Page:     normalized.Page,
 		PageSize: normalized.PageSize,
 		Total:    total,
 	}, nil
+}
+
+func (s *PublicCatalogService) ListHotFiles(ctx context.Context, limit int) (*PublicFileFeedResult, error) {
+	return s.listManagedFileFeed(ctx, limit, []string{"download_count DESC", "created_at DESC", "id DESC"})
+}
+
+func (s *PublicCatalogService) ListLatestFiles(ctx context.Context, limit int) (*PublicFileFeedResult, error) {
+	return s.listManagedFileFeed(ctx, limit, []string{"created_at DESC", "id DESC"})
 }
 
 func (s *PublicCatalogService) ListPublicFolders(ctx context.Context, parentID string) ([]PublicFolderItem, error) {
@@ -213,15 +207,19 @@ func (s *PublicCatalogService) GetPublicFolderDetail(ctx context.Context, folder
 	}, nil
 }
 
-type normalizedPublicFileListInput struct {
-	FolderID       *string
-	FilterByFolder bool
-	Page           int
-	PageSize       int
-	OrderBy        []string
+type normalizedPublicFolderFileListInput struct {
+	FolderID string
+	Page     int
+	PageSize int
+	OrderBy  []string
 }
 
-func normalizePublicFileListInput(input PublicFileListInput) (*normalizedPublicFileListInput, error) {
+func normalizePublicFolderFileListInput(input PublicFolderFileListInput) (*normalizedPublicFolderFileListInput, error) {
+	folderID := strings.TrimSpace(input.FolderID)
+	if folderID == "" {
+		return nil, ErrInvalidPublicFileQuery
+	}
+
 	page := input.Page
 	if page == 0 {
 		page = defaultPublicFilePage
@@ -243,19 +241,11 @@ func normalizePublicFileListInput(input PublicFileListInput) (*normalizedPublicF
 		return nil, err
 	}
 
-	var folderID *string
-	filterByFolder := input.FilterByFolder
-	if trimmed := strings.TrimSpace(input.FolderID); trimmed != "" {
-		folderID = &trimmed
-		filterByFolder = true
-	}
-
-	return &normalizedPublicFileListInput{
-		FolderID:       folderID,
-		FilterByFolder: filterByFolder,
-		Page:           page,
-		PageSize:       pageSize,
-		OrderBy:        orderBy,
+	return &normalizedPublicFolderFileListInput{
+		FolderID: folderID,
+		Page:     page,
+		PageSize: pageSize,
+		OrderBy:  orderBy,
 	}, nil
 }
 
@@ -265,9 +255,47 @@ func resolvePublicFileSort(sort string) ([]string, error) {
 		return []string{"created_at DESC", "id DESC"}, nil
 	case "download_count_desc":
 		return []string{"download_count DESC", "created_at DESC", "id DESC"}, nil
-	case "title_asc":
-		return []string{"title ASC", "created_at DESC", "id DESC"}, nil
+	case "name_asc":
+		return []string{"name ASC", "created_at DESC", "id DESC"}, nil
 	default:
 		return nil, ErrInvalidPublicFileQuery
 	}
+}
+
+func (s *PublicCatalogService) listManagedFileFeed(ctx context.Context, limit int, orderBy []string) (*PublicFileFeedResult, error) {
+	normalizedLimit := limit
+	if normalizedLimit <= 0 {
+		normalizedLimit = 20
+	}
+	if normalizedLimit > maxPublicFilePageSize {
+		normalizedLimit = maxPublicFilePageSize
+	}
+
+	files, err := s.repository.ListManagedFileFeed(ctx, repository.PublicFileFeedQuery{
+		Limit:   normalizedLimit,
+		OrderBy: orderBy,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list managed file feed: %w", err)
+	}
+
+	return &PublicFileFeedResult{
+		Items: mapPublicFileItems(files),
+	}, nil
+}
+
+func mapPublicFileItems(files []model.File) []PublicFileItem {
+	items := make([]PublicFileItem, 0, len(files))
+	for _, file := range files {
+		items = append(items, PublicFileItem{
+			ID:            file.ID,
+			Name:          file.Name,
+			Description:   file.Description,
+			Extension:     file.Extension,
+			UploadedAt:    file.CreatedAt,
+			DownloadCount: file.DownloadCount,
+			Size:          file.Size,
+		})
+	}
+	return items
 }

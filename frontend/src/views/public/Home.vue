@@ -58,9 +58,9 @@ interface PublicFolderItem {
 
 interface PublicFileItem {
   id: string;
-  title: string;
-  original_name: string;
+  name: string;
   description: string;
+  extension: string;
   uploaded_at: string;
   download_count: number;
   size: number;
@@ -95,7 +95,6 @@ interface SearchResultResponse {
     entity_type: "file" | "folder";
     id: string;
     name: string;
-    original_name?: string;
     extension?: string;
     size?: number;
     download_count?: number;
@@ -190,6 +189,7 @@ const currentFolderID = computed(() => {
   const raw = route.query.folder;
   return typeof raw === "string" && raw.trim() ? raw.trim() : "";
 });
+const canUploadToCurrentFolder = computed(() => currentFolderID.value.length > 0);
 const rootViewLocked = computed(() => route.query.root === "1");
 const hotDownloads = computed(() => hotDownloadItems.value.slice(0, 5).map((item) => ({
   id: item.id,
@@ -235,8 +235,8 @@ const rows = computed<DirectoryRow[]>(() => [
     ? files.value.map((file) => ({
         id: file.id,
         kind: "file" as const,
-        name: file.original_name || file.title,
-        extension: extractExtension(file.original_name),
+        name: file.name,
+        extension: file.extension || extractExtension(file.name),
         description: (file.description ?? "").trim(),
         downloadCount: file.download_count ?? 0,
         fileCount: 0,
@@ -533,10 +533,10 @@ function openLatestItemsModal() {
 
 async function loadHotDownloads() {
   try {
-    const response = await httpClient.get<{ items: PublicFileItem[] }>("/public/files?sort=download_count_desc&page=1&page_size=20");
+    const response = await httpClient.get<{ items: PublicFileItem[] }>("/public/files/hot?limit=20");
     hotDownloadItems.value = (response.items ?? []).map((item) => ({
       id: item.id,
-      name: item.original_name || item.title,
+      name: item.name,
       downloadCount: item.download_count ?? 0,
     }));
   } catch {
@@ -546,10 +546,10 @@ async function loadHotDownloads() {
 
 async function loadLatestTitles() {
   try {
-    const response = await httpClient.get<{ items: PublicFileItem[] }>("/public/files?sort=created_at_desc&page=1&page_size=20");
+    const response = await httpClient.get<{ items: PublicFileItem[] }>("/public/files/latest?limit=20");
     latestItems.value = (response.items ?? []).map((item) => ({
       id: item.id,
-      name: item.original_name || item.title,
+      name: item.name,
     }));
   } catch {
     latestItems.value = [];
@@ -562,15 +562,6 @@ async function loadDirectory() {
   actionMessage.value = "";
   actionError.value = "";
   try {
-    const folderParams = new URLSearchParams({
-      page: "1",
-      page_size: "100",
-      sort: "title_asc",
-    });
-    if (currentFolderID.value) {
-      folderParams.set("folder_id", currentFolderID.value);
-    }
-
     const directoryParams = new URLSearchParams();
     if (currentFolderID.value) {
       directoryParams.set("parent_id", currentFolderID.value);
@@ -578,8 +569,16 @@ async function loadDirectory() {
 
     const requests: Array<Promise<unknown>> = [
       httpClient.get<{ items: PublicFolderItem[] }>(`/public/folders${directoryParams.toString() ? `?${directoryParams.toString()}` : ""}`),
-      httpClient.get<{ items: PublicFileItem[] }>(`/public/files?${folderParams.toString()}`),
     ];
+
+    if (currentFolderID.value) {
+      const folderParams = new URLSearchParams({
+        page: "1",
+        page_size: "100",
+        sort: "name_asc",
+      });
+      requests.push(httpClient.get<{ items: PublicFileItem[] }>(`/public/folders/${encodeURIComponent(currentFolderID.value)}/files?${folderParams.toString()}`));
+    }
 
     if (currentFolderID.value) {
       requests.push(httpClient.get<FolderDetailResponse>(`/public/folders/${encodeURIComponent(currentFolderID.value)}`));
@@ -587,7 +586,7 @@ async function loadDirectory() {
 
     const [folderResponse, fileResponse, folderDetail] = await Promise.all(requests);
     folders.value = (folderResponse as { items: PublicFolderItem[] }).items ?? [];
-    files.value = (fileResponse as { items: PublicFileItem[] }).items ?? [];
+    files.value = currentFolderID.value ? ((fileResponse as { items: PublicFileItem[] } | undefined)?.items ?? []) : [];
 
     if (!currentFolderID.value && !rootViewLocked.value && folders.value.length === 1) {
       void router.replace({ name: "public-home", query: { folder: folders.value[0].id } });
@@ -755,8 +754,8 @@ async function runSearch(keyword: string) {
     searchRows.value = response.items.map((item) => ({
       id: item.id,
       kind: item.entity_type,
-      name: item.entity_type === "file" ? (item.original_name || item.name) : item.name,
-      extension: item.entity_type === "file" ? (item.extension || extractExtension(item.original_name || item.name)) : "",
+      name: item.name,
+      extension: item.entity_type === "file" ? (item.extension || extractExtension(item.name)) : "",
       description: "",
       downloadCount: item.download_count ?? 0,
       fileCount: 0,
@@ -784,6 +783,10 @@ function clearSearchState() {
 }
 
 function openUpload() {
+  if (!canUploadToCurrentFolder.value) {
+    showTransientWarning("请先进入一个目录后再上传。");
+    return;
+  }
   uploadModalOpen.value = true;
   uploadError.value = "";
   uploadMessage.value = "";
@@ -891,6 +894,8 @@ async function submitUpload() {
   } catch (err) {
     if (err instanceof HttpError && err.status === 400) {
       uploadError.value = "上传参数无效。";
+    } else if (err instanceof HttpError && err.status === 409) {
+      uploadError.value = "提交上传失败，请检查名称或者联系管理员";
     } else {
       uploadError.value = "提交上传失败。";
     }
@@ -1109,10 +1114,9 @@ async function submitFeedback() {
   feedbackMessage.value = "";
   feedbackError.value = "";
   try {
-    const response = await httpClient.post<{ receipt_code: string }>("/public/reports", {
+    const response = await httpClient.post<{ receipt_code: string }>("/public/feedback", {
       file_id: feedbackTarget.value.type === "file" ? feedbackTarget.value.id : "",
       folder_id: feedbackTarget.value.type === "folder" ? feedbackTarget.value.id : "",
-      reason: "content_error",
       description: feedbackDescription.value.trim(),
     });
     feedbackMessage.value = `反馈已提交，请保存回执码 ${response.receipt_code}。`;
@@ -1123,9 +1127,9 @@ async function submitFeedback() {
     syncBodyScrollLock();
   } catch (err: unknown) {
     if (err instanceof HttpError && err.status === 400) {
-      feedbackError.value = "反馈原因无效。";
+      feedbackError.value = "请填写问题说明。";
     } else if (err instanceof HttpError && err.status === 404) {
-      feedbackError.value = "文件不存在或已下线。";
+      feedbackError.value = "目标不存在或已删除。";
     } else {
       feedbackError.value = "提交反馈失败。";
     }
@@ -1305,10 +1309,12 @@ async function syncSessionReceiptCode() {
               <button
                 type="button"
                 class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                :disabled="!canUploadToCurrentFolder"
+                :class="!canUploadToCurrentFolder ? 'cursor-not-allowed opacity-45 hover:border-slate-200 hover:text-slate-600' : ''"
                 @click="openUpload"
               >
                 <Upload class="h-4 w-4" />
-                在该目录上传
+                {{ canUploadToCurrentFolder ? "在该目录上传" : "进入目录后上传" }}
               </button>
 
               <button

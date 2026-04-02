@@ -6,21 +6,8 @@ import { httpClient } from "../../lib/http/client";
 import { readApiError } from "../../lib/http/helpers";
 
 interface SystemPolicy {
-  guest: {
-    allow_direct_publish: boolean;
-    extra_permissions_enabled: boolean;
-    allow_guest_edit_title: boolean;
-    allow_guest_edit_description: boolean;
-    allow_guest_resource_delete: boolean;
-  };
   upload: {
-    max_file_size_bytes: number;
-    allowed_extensions: string[];
-  };
-  search: {
-    enable_fuzzy_match: boolean;
-    enable_folder_scope: boolean;
-    result_window: number;
+    max_upload_total_bytes: number;
   };
 }
 
@@ -33,7 +20,6 @@ interface ManagedFolderNode {
 
 const loading = ref(false);
 const loaded = ref(false);
-const guestSaving = ref(false);
 const uploadSaving = ref(false);
 const error = ref("");
 const message = ref("");
@@ -61,24 +47,10 @@ const rescanError = ref("");
 const rescanMessage = ref("");
 const uploadSizeValue = ref(5);
 const uploadSizeUnit = ref<"B" | "KB" | "MB" | "GB">("GB");
-const guestSnapshot = ref("");
 const uploadSnapshot = ref("");
 const form = reactive<SystemPolicy>({
-  guest: {
-    allow_direct_publish: false,
-    extra_permissions_enabled: false,
-    allow_guest_edit_title: false,
-    allow_guest_edit_description: false,
-    allow_guest_resource_delete: false,
-  },
   upload: {
-    max_file_size_bytes: 0,
-    allowed_extensions: [],
-  },
-  search: {
-    enable_fuzzy_match: true,
-    enable_folder_scope: true,
-    result_window: 100,
+    max_upload_total_bytes: 0,
   },
 });
 
@@ -92,11 +64,8 @@ async function loadPolicy() {
   message.value = "";
   try {
     const response = await httpClient.get<SystemPolicy>("/admin/system/settings");
-    Object.assign(form.guest, response.guest);
     Object.assign(form.upload, response.upload);
-    Object.assign(form.search, response.search);
-    applyUploadSizeFields(response.upload.max_file_size_bytes);
-    guestSnapshot.value = serializeGuestState();
+    applyUploadSizeFields(response.upload.max_upload_total_bytes);
     uploadSnapshot.value = serializeUploadState();
   } catch {
     error.value = "加载系统设置失败。";
@@ -106,41 +75,11 @@ async function loadPolicy() {
   }
 }
 
-async function saveGuestPolicy() {
-  guestSaving.value = true;
-  error.value = "";
-  message.value = "";
-  form.guest.extra_permissions_enabled =
-    form.guest.allow_guest_edit_title ||
-    form.guest.allow_guest_edit_description ||
-    form.guest.allow_guest_resource_delete;
-  applyBuiltinSearchPolicy();
-
-  try {
-    await httpClient.request("/admin/system/settings", {
-      method: "PUT",
-      body: form,
-    });
-    guestSnapshot.value = serializeGuestState();
-    message.value = "访客策略已更新。";
-  } catch (err: unknown) {
-    error.value = readApiError(err, "更新访客策略失败。");
-  } finally {
-    guestSaving.value = false;
-  }
-}
-
 async function saveUploadPolicy() {
   uploadSaving.value = true;
   error.value = "";
   message.value = "";
-  form.guest.extra_permissions_enabled =
-    form.guest.allow_guest_edit_title ||
-    form.guest.allow_guest_edit_description ||
-    form.guest.allow_guest_resource_delete;
-  form.upload.max_file_size_bytes = toBytes(uploadSizeValue.value, uploadSizeUnit.value);
-  form.upload.allowed_extensions = [];
-  applyBuiltinSearchPolicy();
+  form.upload.max_upload_total_bytes = toBytes(uploadSizeValue.value, uploadSizeUnit.value);
 
   try {
     await httpClient.request("/admin/system/settings", {
@@ -156,24 +95,9 @@ async function saveUploadPolicy() {
   }
 }
 
-function applyBuiltinSearchPolicy() {
-  form.search.enable_fuzzy_match = true;
-  form.search.enable_folder_scope = true;
-  form.search.result_window = 100;
-}
-
-function serializeGuestState() {
-  return JSON.stringify({
-    allow_direct_publish: form.guest.allow_direct_publish,
-    allow_guest_edit_title: form.guest.allow_guest_edit_title,
-    allow_guest_edit_description: form.guest.allow_guest_edit_description,
-    allow_guest_resource_delete: form.guest.allow_guest_resource_delete,
-  });
-}
-
 function serializeUploadState() {
   return JSON.stringify({
-    max_file_size_bytes: toBytes(uploadSizeValue.value, uploadSizeUnit.value),
+    max_upload_total_bytes: toBytes(uploadSizeValue.value, uploadSizeUnit.value),
   });
 }
 
@@ -211,7 +135,6 @@ function toBytes(value: number, unit: "B" | "KB" | "MB" | "GB") {
   }
 }
 
-const guestDirty = computed(() => loaded.value && guestSnapshot.value !== serializeGuestState());
 const uploadDirty = computed(() => loaded.value && uploadSnapshot.value !== serializeUploadState());
 const strictDirectoryInputKeyword = computed(() => {
   const current = normalizeManualBrowsePath(importCurrentPath.value);
@@ -539,29 +462,15 @@ function isManagedRootClientChild(path: string, root: string) {
         <p v-if="deleteError" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ deleteError }}</p>
       </SurfaceCard>
 
-      <div class="grid gap-6 xl:grid-cols-3">
-      <form class="panel space-y-6 p-6" @submit.prevent="saveGuestPolicy">
-        <div>
-          <h3 class="text-lg font-semibold text-slate-900">访客策略</h3>
-        </div>
-        <div class="grid gap-3">
-          <label class="panel-muted flex items-center gap-3 p-4 text-sm text-slate-700"><input v-model="form.guest.allow_direct_publish" type="checkbox" />允许游客免审核上传</label>
-          <label class="panel-muted flex items-center gap-3 p-4 text-sm text-slate-700"><input v-model="form.guest.allow_guest_edit_title" type="checkbox" />允许访客编辑文件名</label>
-          <label class="panel-muted flex items-center gap-3 p-4 text-sm text-slate-700"><input v-model="form.guest.allow_guest_edit_description" type="checkbox" />允许访客编辑文件描述</label>
-          <label class="panel-muted flex items-center gap-3 p-4 text-sm text-slate-700"><input v-model="form.guest.allow_guest_resource_delete" type="checkbox" />允许访客删除资料</label>
-        </div>
-        <button type="submit" class="btn-primary" :disabled="guestSaving || !guestDirty">
-          {{ guestSaving ? "更新中…" : "确认更新" }}
-        </button>
-      </form>
-
+      <div class="grid gap-6 xl:grid-cols-2">
       <form class="panel space-y-6 p-6" @submit.prevent="saveUploadPolicy">
         <div>
-          <h3 class="text-lg font-semibold text-slate-900">上传限制</h3>
+          <h3 class="text-lg font-semibold text-slate-900">上传设置</h3>
+          <p class="mt-2 text-sm text-slate-500">访客只允许发起上传，所有公开上传都会先进入审核。单次提交里的文件总大小不能超过这里设置的上限。</p>
         </div>
         <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_140px]">
           <div class="space-y-2">
-            <label class="text-sm font-medium text-slate-700">最大上传大小</label>
+            <label class="text-sm font-medium text-slate-700">单次提交总大小</label>
             <input v-model.number="uploadSizeValue" type="number" min="1" class="field" placeholder="请输入大小" />
           </div>
           <div class="space-y-2">

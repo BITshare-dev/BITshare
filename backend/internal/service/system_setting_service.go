@@ -14,29 +14,30 @@ import (
 
 const systemPolicyKey = "system_policy"
 
-type GuestPolicy struct {
-	AllowDirectPublish        bool `json:"allow_direct_publish"`
-	ExtraPermissionsEnabled   bool `json:"extra_permissions_enabled"`
-	AllowGuestEditTitle       bool `json:"allow_guest_edit_title"`
-	AllowGuestEditDescription bool `json:"allow_guest_edit_description"`
-	AllowGuestResourceDelete  bool `json:"allow_guest_resource_delete"`
-}
-
 type UploadPolicy struct {
-	MaxFileSizeBytes  int64    `json:"max_file_size_bytes"`
-	AllowedExtensions []string `json:"allowed_extensions"`
+	MaxUploadTotalBytes int64 `json:"max_upload_total_bytes"`
 }
 
-type SearchPolicy struct {
-	EnableFuzzyMatch  bool `json:"enable_fuzzy_match"`
-	EnableFolderScope bool `json:"enable_folder_scope"`
-	ResultWindow      int  `json:"result_window"`
+func (p *UploadPolicy) UnmarshalJSON(data []byte) error {
+	type uploadPolicyAlias struct {
+		MaxUploadTotalBytes int64 `json:"max_upload_total_bytes"`
+		MaxFileSizeBytes    int64 `json:"max_file_size_bytes"`
+	}
+
+	var raw uploadPolicyAlias
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	p.MaxUploadTotalBytes = raw.MaxUploadTotalBytes
+	if p.MaxUploadTotalBytes <= 0 {
+		p.MaxUploadTotalBytes = raw.MaxFileSizeBytes
+	}
+	return nil
 }
 
 type SystemPolicy struct {
-	Guest  GuestPolicy  `json:"guest"`
 	Upload UploadPolicy `json:"upload"`
-	Search SearchPolicy `json:"search"`
 }
 
 type SystemSettingService struct {
@@ -47,12 +48,9 @@ type SystemSettingService struct {
 
 func defaultSystemPolicy(cfg config.UploadConfig) SystemPolicy {
 	return SystemPolicy{
-		Guest: GuestPolicy{},
 		Upload: UploadPolicy{
-			MaxFileSizeBytes:  cfg.MaxFileSizeBytes,
-			AllowedExtensions: append([]string(nil), cfg.AllowedExtensions...),
+			MaxUploadTotalBytes: cfg.MaxUploadTotalBytes,
 		},
-		Search: defaultSearchPolicy(),
 	}
 }
 
@@ -78,15 +76,13 @@ func (s *SystemSettingService) GetPolicy(ctx context.Context) (*SystemPolicy, er
 	if err := json.Unmarshal([]byte(item.Value), &policy); err != nil {
 		return nil, fmt.Errorf("decode system policy: %w", err)
 	}
-	policy.Search = defaultSearchPolicy()
 	return &policy, nil
 }
 
 func (s *SystemSettingService) SavePolicy(ctx context.Context, policy SystemPolicy, operatorID string, operatorIP string) (*SystemPolicy, error) {
-	if policy.Upload.MaxFileSizeBytes <= 0 || policy.Search.ResultWindow <= 0 {
+	if policy.Upload.MaxUploadTotalBytes <= 0 {
 		return nil, ErrInvalidUploadInput
 	}
-	policy.Search = defaultSearchPolicy()
 
 	payload, err := json.Marshal(policy)
 	if err != nil {
@@ -100,12 +96,4 @@ func (s *SystemSettingService) SavePolicy(ctx context.Context, policy SystemPoli
 		return nil, fmt.Errorf("save system policy: %w", err)
 	}
 	return &policy, nil
-}
-
-func defaultSearchPolicy() SearchPolicy {
-	return SearchPolicy{
-		EnableFuzzyMatch:  true,
-		EnableFolderScope: true,
-		ResultWindow:      100,
-	}
 }
