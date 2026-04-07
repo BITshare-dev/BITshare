@@ -50,12 +50,14 @@ type UploadConfig struct {
 	ReceiptCodeLength    int   `json:"receipt_code_length"`
 }
 
+// Load overlays config files onto an existing Config, so omitted upload fields
+// must preserve the current values instead of resetting to zero.
 func (c *UploadConfig) UnmarshalJSON(data []byte) error {
 	type uploadConfigAlias struct {
-		MaxUploadTotalBytes  int64 `json:"max_upload_total_bytes"`
-		MaxFileSizeBytes     int64 `json:"max_file_size_bytes"`
-		MaxDescriptionLength int   `json:"max_description_length"`
-		ReceiptCodeLength    int   `json:"receipt_code_length"`
+		MaxUploadTotalBytes  *int64 `json:"max_upload_total_bytes"`
+		MaxFileSizeBytes     *int64 `json:"max_file_size_bytes"`
+		MaxDescriptionLength *int   `json:"max_description_length"`
+		ReceiptCodeLength    *int   `json:"receipt_code_length"`
 	}
 
 	var raw uploadConfigAlias
@@ -63,13 +65,20 @@ func (c *UploadConfig) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	c.MaxUploadTotalBytes = raw.MaxUploadTotalBytes
-	if c.MaxUploadTotalBytes <= 0 {
-		c.MaxUploadTotalBytes = raw.MaxFileSizeBytes
+	if raw.MaxUploadTotalBytes != nil {
+		c.MaxUploadTotalBytes = *raw.MaxUploadTotalBytes
+	} else {
+		setIfPresent(&c.MaxUploadTotalBytes, raw.MaxFileSizeBytes)
 	}
-	c.MaxDescriptionLength = raw.MaxDescriptionLength
-	c.ReceiptCodeLength = raw.ReceiptCodeLength
+	setIfPresent(&c.MaxDescriptionLength, raw.MaxDescriptionLength)
+	setIfPresent(&c.ReceiptCodeLength, raw.ReceiptCodeLength)
 	return nil
+}
+
+func setIfPresent[T any](target *T, value *T) {
+	if value != nil {
+		*target = *value
+	}
 }
 
 type SessionConfig struct {
@@ -114,11 +123,11 @@ func Default() Config {
 			Staging: "staging",
 			Trash:   "trash",
 		},
-			Upload: UploadConfig{
-				MaxUploadTotalBytes:  5 << 30,
-				MaxDescriptionLength: 4000,
-				ReceiptCodeLength:    12,
-			},
+		Upload: UploadConfig{
+			MaxUploadTotalBytes:  5 << 30,
+			MaxDescriptionLength: 4000,
+			ReceiptCodeLength:    12,
+		},
 		Session: SessionConfig{
 			Name:            "openshare_session",
 			Secret:          "replace-this-in-local-config",
