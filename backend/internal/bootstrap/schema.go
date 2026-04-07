@@ -19,6 +19,7 @@ var managedModels = []any{
 	&model.AdminSession{},
 	&model.SiteVisitEvent{},
 	&model.DownloadEvent{},
+	&model.FileDailyDownload{},
 	&model.SystemSetting{},
 	&model.SystemStat{},
 	&model.DailyStat{},
@@ -43,6 +44,9 @@ func EnsureSchema(db *gorm.DB) error {
 	}
 	if err := db.Migrator().DropTable("site_visit_daily_uniques", "site_visitors"); err != nil {
 		return fmt.Errorf("drop legacy visit tables: %w", err)
+	}
+	if err := rebuildRecentFileDailyDownloads(db); err != nil {
+		return fmt.Errorf("rebuild recent file daily downloads: %w", err)
 	}
 
 	if err := rebuildFolderStats(db); err != nil {

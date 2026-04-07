@@ -19,16 +19,21 @@ func TestPublicHotFilesListsMostDownloadedFiles(t *testing.T) {
 	cfg := newRouterTestConfig(t)
 	db := newRouterTestDB(t)
 	folderID := createPublicTestFolder(t, db, "导入资料")
-	createPublicTestFile(t, db, publicTestFile{
+	now := time.Now().UTC()
+	topFile := createPublicTestFile(t, db, publicTestFile{
 		title:         "公开文件",
 		downloadCount: 7,
 		size:          128,
 	})
-	createPublicTestFile(t, db, publicTestFile{
-		title:    "目录内文件",
-		folderID: &folderID,
-		size:     256,
+	secondFile := createPublicTestFile(t, db, publicTestFile{
+		title:         "目录内文件",
+		folderID:      &folderID,
+		downloadCount: 20,
+		size:          256,
 	})
+	createFileDailyDownloadAggregate(t, db, topFile.ID, now.AddDate(0, 0, -1), 3)
+	createFileDailyDownloadAggregate(t, db, secondFile.ID, now.AddDate(0, 0, -8), 100)
+	createFileDailyDownloadAggregate(t, db, secondFile.ID, now.AddDate(0, 0, -1), 2)
 
 	engine := New(db, cfg, newRouterSessionManager(db))
 	request := httptest.NewRequest(http.MethodGet, "/api/public/files/hot?limit=10", nil)
@@ -42,7 +47,8 @@ func TestPublicHotFilesListsMostDownloadedFiles(t *testing.T) {
 
 	var response struct {
 		Items []struct {
-			Name string `json:"name"`
+			Name          string `json:"name"`
+			DownloadCount int64  `json:"download_count"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
@@ -55,6 +61,9 @@ func TestPublicHotFilesListsMostDownloadedFiles(t *testing.T) {
 
 	if response.Items[0].Name != "公开文件.pdf" || response.Items[1].Name != "目录内文件.pdf" {
 		t.Fatalf("unexpected hot files order: %+v", response.Items)
+	}
+	if response.Items[0].DownloadCount != 7 || response.Items[1].DownloadCount != 20 {
+		t.Fatalf("expected hot list to still expose total download_count, got %+v", response.Items)
 	}
 }
 
@@ -319,6 +328,21 @@ func createPublicTestFile(t *testing.T, db *gorm.DB, input publicTestFile) *mode
 	}
 
 	return file
+}
+
+func createFileDailyDownloadAggregate(t *testing.T, db *gorm.DB, fileID string, day time.Time, downloads int64) {
+	t.Helper()
+
+	row := &model.FileDailyDownload{
+		FileID:    fileID,
+		Day:       day.UTC().Format("2006-01-02"),
+		Downloads: downloads,
+		CreatedAt: day.UTC(),
+		UpdatedAt: day.UTC(),
+	}
+	if err := db.Create(row).Error; err != nil {
+		t.Fatalf("create file daily download aggregate failed: %v", err)
+	}
 }
 
 type publicTestFolder struct {

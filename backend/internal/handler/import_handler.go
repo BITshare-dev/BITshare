@@ -19,7 +19,7 @@ type importLocalRequest struct {
 	RootPath string `json:"root_path"`
 }
 
-type deleteManagedDirectoryRequest struct {
+type unmanageManagedDirectoryRequest struct {
 	Password string `json:"password"`
 }
 
@@ -112,7 +112,7 @@ func (h *ImportHandler) GetFolderTree(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"items": tree})
 }
 
-func (h *ImportHandler) DeleteManagedDirectory(ctx *gin.Context) {
+func (h *ImportHandler) UnmanageManagedDirectory(ctx *gin.Context) {
 	identity, ok := session.GetAdminIdentity(ctx)
 	if !ok {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
@@ -123,7 +123,7 @@ func (h *ImportHandler) DeleteManagedDirectory(ctx *gin.Context) {
 		return
 	}
 
-	var req deleteManagedDirectoryRequest
+	var req unmanageManagedDirectoryRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
@@ -139,14 +139,14 @@ func (h *ImportHandler) DeleteManagedDirectory(ctx *gin.Context) {
 		return
 	}
 
-	if err := h.service.DeleteManagedDirectory(ctx.Request.Context(), ctx.Param("folderID"), identity.AdminID, ctx.ClientIP()); err != nil {
+	if err := h.service.UnmanageManagedDirectory(ctx.Request.Context(), ctx.Param("folderID"), identity.AdminID, ctx.ClientIP()); err != nil {
 		switch {
 		case errors.Is(err, service.ErrFolderTreeNotFound):
 			ctx.JSON(http.StatusNotFound, gin.H{"error": "folder not found"})
 		case errors.Is(err, service.ErrManagedRootRequired):
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": "managed root folder required"})
 		default:
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete managed directory"})
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to unmanage managed directory"})
 		}
 		return
 	}

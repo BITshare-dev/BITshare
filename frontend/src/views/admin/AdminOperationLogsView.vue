@@ -81,6 +81,8 @@ function actionLabel(action: string) {
     resource_updated: "更新资料信息",
     resource_deleted: "移入回收站",
     local_import: "导入本地目录",
+    managed_directory_deleted: "删除托管目录",
+    managed_directory_unmanaged: "取消托管目录",
     managed_directory_rescanned: "重新扫描托管目录",
     system_settings_updated: "更新系统设置",
     announcement_created: "创建公告",
@@ -148,6 +150,10 @@ function summaryLabel(item: OperationLogItem) {
         return `导入本地目录：${String(parsed.root_path ?? "-")}`;
       }
       return "导入本地目录";
+    case "managed_directory_deleted":
+      return `删除托管目录${detail ? `：${detail}` : ""}`;
+    case "managed_directory_unmanaged":
+      return `取消托管目录${detail ? `：${detail}` : ""}`;
     case "managed_directory_rescanned":
       if (parsed) {
         return `重新扫描托管目录：${String(parsed.root_path ?? "-")}`;

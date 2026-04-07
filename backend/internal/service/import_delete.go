@@ -11,7 +11,7 @@ import (
 	"openshare/backend/pkg/identity"
 )
 
-func (s *ImportService) DeleteManagedDirectory(ctx context.Context, folderID, adminID, operatorIP string) error {
+func (s *ImportService) UnmanageManagedDirectory(ctx context.Context, folderID, adminID, operatorIP string) error {
 	folder, err := s.repository.FindFolderByID(ctx, strings.TrimSpace(folderID))
 	if err != nil {
 		return fmt.Errorf("find folder: %w", err)
@@ -30,20 +30,24 @@ func (s *ImportService) DeleteManagedDirectory(ctx context.Context, folderID, ad
 
 	detail := folder.Name
 	if folder.SourcePath != nil && strings.TrimSpace(*folder.SourcePath) != "" {
-		if _, err := s.storage.MoveManagedDirectoryToTrash(*folder.SourcePath); err != nil {
-			return fmt.Errorf("move managed root to trash: %w", err)
-		}
 		detail = *folder.SourcePath
 	}
 
-	if err := s.repository.DeleteManagedRootWithLog(ctx, folder.ID, adminID, operatorIP, detail, logID, s.nowFunc()); err != nil {
+	result, err := s.repository.UnmanageManagedRootWithLog(ctx, folder.ID, adminID, operatorIP, detail, logID, s.nowFunc())
+	if err != nil {
 		if errors.Is(err, repository.ErrManagedRootRequired) {
 			return ErrManagedRootRequired
 		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrFolderTreeNotFound
 		}
-		return fmt.Errorf("delete managed directory: %w", err)
+		return fmt.Errorf("unmanage managed directory: %w", err)
+	}
+
+	for _, stagingPath := range result.PendingStagingPaths {
+		if err := s.storage.DeleteStagedFile(stagingPath); err != nil {
+			return fmt.Errorf("cleanup pending staged file: %w", err)
+		}
 	}
 
 	return nil

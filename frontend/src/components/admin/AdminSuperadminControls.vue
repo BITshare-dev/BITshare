@@ -38,10 +38,10 @@ const importFilter = ref("");
 const managedFolders = ref<Array<{ id: string; name: string; sourcePath: string }>>([]);
 const managedFoldersLoading = ref(false);
 const managedFoldersError = ref("");
-const deletingFolderID = ref("");
-const deletePassword = ref("");
-const deleteError = ref("");
-const deleteMessage = ref("");
+const unmanagingFolderID = ref("");
+const unmanagePassword = ref("");
+const unmanageError = ref("");
+const unmanageMessage = ref("");
 const rescanningFolderID = ref("");
 const rescanError = ref("");
 const rescanMessage = ref("");
@@ -349,37 +349,37 @@ async function rescanManagedFolder(folderID: string) {
   }
 }
 
-function beginDeleteManagedFolder(folderID: string) {
-  deleteError.value = "";
-  deleteMessage.value = "";
-  deletePassword.value = "";
-  deletingFolderID.value = folderID;
+function beginUnmanageManagedFolder(folderID: string) {
+  unmanageError.value = "";
+  unmanageMessage.value = "";
+  unmanagePassword.value = "";
+  unmanagingFolderID.value = folderID;
 }
 
-function cancelDeleteManagedFolder() {
-  deletingFolderID.value = "";
-  deletePassword.value = "";
+function cancelUnmanageManagedFolder() {
+  unmanagingFolderID.value = "";
+  unmanagePassword.value = "";
 }
 
-async function confirmDeleteManagedFolder(folderID: string) {
-  if (!deletePassword.value.trim()) {
-    deleteError.value = "请输入超级管理员密码。";
+async function confirmUnmanageManagedFolder(folderID: string) {
+  if (!unmanagePassword.value.trim()) {
+    unmanageError.value = "请输入超级管理员密码。";
     return;
   }
 
-  deleteError.value = "";
-  deleteMessage.value = "";
+  unmanageError.value = "";
+  unmanageMessage.value = "";
   try {
     await httpClient.request(`/admin/imports/local/${encodeURIComponent(folderID)}`, {
       method: "DELETE",
-      body: { password: deletePassword.value },
+      body: { password: unmanagePassword.value },
     });
-    deleteMessage.value = "已删除托管目录及相关数据。";
-    deletingFolderID.value = "";
-    deletePassword.value = "";
+    unmanageMessage.value = "已取消托管，并清理站内关联数据。";
+    unmanagingFolderID.value = "";
+    unmanagePassword.value = "";
     await loadManagedFolders();
   } catch (err: unknown) {
-    deleteError.value = readApiError(err, "删除托管目录失败。");
+    unmanageError.value = readApiError(err, "取消托管目录失败。");
   }
 }
 
@@ -440,26 +440,26 @@ function isManagedRootClientChild(path: string, root: string) {
                   type="button"
                   class="inline-flex h-11 items-center justify-center rounded-xl bg-rose-600 px-5 text-sm font-medium text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
                   :disabled="managedFoldersLoading || rescanningFolderID === folder.id"
-                  @click="beginDeleteManagedFolder(folder.id)"
+                  @click="beginUnmanageManagedFolder(folder.id)"
                 >
-                  删除
+                  取消托管
                 </button>
               </div>
             </div>
-            <div v-if="deletingFolderID === folder.id" class="mt-4 space-y-3 rounded-xl border border-rose-200 bg-white px-4 py-4">
-              <p class="text-sm text-rose-700">该操作会删除此托管目录及其关联文件、下载记录和反馈记录。</p>
-              <input v-model="deletePassword" type="password" class="field" placeholder="输入 superadmin 密码确认删除" />
+            <div v-if="unmanagingFolderID === folder.id" class="mt-4 space-y-3 rounded-xl border border-rose-200 bg-white px-4 py-4">
+              <p class="text-sm text-rose-700">该操作会取消此目录的托管并清理站内关联数据，原目录和文件会保留在原位置。</p>
+              <input v-model="unmanagePassword" type="password" class="field" placeholder="输入 superadmin 密码确认取消托管" />
               <div class="flex items-center justify-end gap-3">
-                <button type="button" class="inline-flex h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-5 text-sm font-medium text-slate-700 transition hover:bg-slate-100" @click="cancelDeleteManagedFolder">取消</button>
-                <button type="button" class="inline-flex h-11 items-center justify-center rounded-xl bg-rose-600 px-5 text-sm font-medium text-white transition hover:bg-rose-700" @click="confirmDeleteManagedFolder(folder.id)">确认删除</button>
+                <button type="button" class="inline-flex h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-5 text-sm font-medium text-slate-700 transition hover:bg-slate-100" @click="cancelUnmanageManagedFolder">取消</button>
+                <button type="button" class="inline-flex h-11 items-center justify-center rounded-xl bg-rose-600 px-5 text-sm font-medium text-white transition hover:bg-rose-700" @click="confirmUnmanageManagedFolder(folder.id)">确认取消托管</button>
               </div>
             </div>
           </div>
         </div>
         <p v-if="rescanMessage" class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ rescanMessage }}</p>
         <p v-if="rescanError" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ rescanError }}</p>
-        <p v-if="deleteMessage" class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ deleteMessage }}</p>
-        <p v-if="deleteError" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ deleteError }}</p>
+        <p v-if="unmanageMessage" class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ unmanageMessage }}</p>
+        <p v-if="unmanageError" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ unmanageError }}</p>
       </SurfaceCard>
 
       <div class="grid gap-6 xl:grid-cols-2">

@@ -13,7 +13,7 @@ import (
 	"openshare/backend/internal/repository"
 )
 
-func TestDeleteManagedDirectoryRequiresSuperAdminPasswordAndCleansData(t *testing.T) {
+func TestUnmanageManagedDirectoryRequiresSuperAdminPasswordKeepsSourceDirectoryAndCleansManagedData(t *testing.T) {
 	_, _, cookie, engine, db := newImportRouteEnv(t, adminAccess{
 		username: "superadmin",
 		password: "s3cret-pass",
@@ -31,6 +31,51 @@ func TestDeleteManagedDirectoryRequiresSuperAdminPasswordAndCleansData(t *testin
 		t.Fatalf("find root folder failed: %v", err)
 	}
 
+	var importedFile model.File
+	if err := db.Where("name = ?", "root.pdf").Take(&importedFile).Error; err != nil {
+		t.Fatalf("find imported file failed: %v", err)
+	}
+
+	pendingSubmission := &model.Submission{
+		ID:          mustNewID(t),
+		ReceiptCode: "SUBMIT001",
+		FolderID:    &rootFolder.ID,
+		Name:        "pending-review.pdf",
+		Status:      model.SubmissionStatusPending,
+	}
+	if err := db.Create(pendingSubmission).Error; err != nil {
+		t.Fatalf("create pending submission failed: %v", err)
+	}
+
+	approvedSubmission := &model.Submission{
+		ID:          mustNewID(t),
+		ReceiptCode: "SUBMIT002",
+		FileID:      &importedFile.ID,
+		Name:        importedFile.Name,
+		Status:      model.SubmissionStatusApproved,
+	}
+	if err := db.Create(approvedSubmission).Error; err != nil {
+		t.Fatalf("create approved submission failed: %v", err)
+	}
+
+	pendingFeedback := &model.Feedback{
+		ID:          mustNewID(t),
+		ReceiptCode: "FDBK0001",
+		FileID:      &importedFile.ID,
+		TargetName:  importedFile.Name,
+		TargetPath:  "/import-root/root.pdf",
+		TargetType:  "file",
+		Description: "needs cleanup",
+		Status:      model.FeedbackStatusPending,
+	}
+	if err := db.Create(pendingFeedback).Error; err != nil {
+		t.Fatalf("create pending feedback failed: %v", err)
+	}
+
+	if err := repository.NewPublicDownloadRepository(db).IncrementDownloadCount(t.Context(), importedFile.ID); err != nil {
+		t.Fatalf("increment download failed: %v", err)
+	}
+
 	deleteRequest := httptest.NewRequest(http.MethodDelete, "/api/admin/imports/local/"+rootFolder.ID, bytes.NewBufferString(`{"password":"s3cret-pass"}`))
 	deleteRequest.Header.Set("Content-Type", "application/json")
 	deleteRequest.AddCookie(cookie)
@@ -38,6 +83,16 @@ func TestDeleteManagedDirectoryRequiresSuperAdminPasswordAndCleansData(t *testin
 	engine.ServeHTTP(deleteRecorder, deleteRequest)
 	if deleteRecorder.Code != http.StatusNoContent {
 		t.Fatalf("expected delete status 204, got %d body=%s", deleteRecorder.Code, deleteRecorder.Body.String())
+	}
+
+	if _, err := os.Stat(importRoot); err != nil {
+		t.Fatalf("expected import root to remain on disk, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(importRoot, "root.pdf")); err != nil {
+		t.Fatalf("expected imported root file to remain on disk, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(importRoot, "nested", "chapter1.txt")); err != nil {
+		t.Fatalf("expected imported nested file to remain on disk, got %v", err)
 	}
 
 	var folderCount int64
@@ -54,6 +109,55 @@ func TestDeleteManagedDirectoryRequiresSuperAdminPasswordAndCleansData(t *testin
 	}
 	if fileCount != 0 {
 		t.Fatalf("expected all imported files deleted, got %d", fileCount)
+	}
+
+	var submissionCount int64
+	if err := db.Model(&model.Submission{}).Count(&submissionCount).Error; err != nil {
+		t.Fatalf("count submissions failed: %v", err)
+	}
+	if submissionCount != 0 {
+		t.Fatalf("expected related submissions deleted, got %d", submissionCount)
+	}
+
+	var feedbackCount int64
+	if err := db.Model(&model.Feedback{}).Count(&feedbackCount).Error; err != nil {
+		t.Fatalf("count feedbacks failed: %v", err)
+	}
+	if feedbackCount != 0 {
+		t.Fatalf("expected related feedback deleted, got %d", feedbackCount)
+	}
+
+	var downloadEventCount int64
+	if err := db.Model(&model.DownloadEvent{}).Count(&downloadEventCount).Error; err != nil {
+		t.Fatalf("count download events failed: %v", err)
+	}
+	if downloadEventCount != 1 {
+		t.Fatalf("expected historical download events preserved, got %d", downloadEventCount)
+	}
+
+	var systemStats model.SystemStat
+	if err := db.Where("key = ?", model.GlobalSystemStatsKey).Take(&systemStats).Error; err != nil {
+		t.Fatalf("load system stats failed: %v", err)
+	}
+	if systemStats.TotalFiles != 0 {
+		t.Fatalf("expected total files reset, got %d", systemStats.TotalFiles)
+	}
+	if systemStats.TotalDownloads != 1 {
+		t.Fatalf("expected historical total downloads preserved, got %d", systemStats.TotalDownloads)
+	}
+	if systemStats.PendingSubmissions != 0 {
+		t.Fatalf("expected pending submissions reset, got %d", systemStats.PendingSubmissions)
+	}
+	if systemStats.PendingFeedbacks != 0 {
+		t.Fatalf("expected pending feedbacks reset, got %d", systemStats.PendingFeedbacks)
+	}
+
+	var unmanageLog model.OperationLog
+	if err := db.Where("action = ?", "managed_directory_unmanaged").Take(&unmanageLog).Error; err != nil {
+		t.Fatalf("find unmanage operation log failed: %v", err)
+	}
+	if unmanageLog.Detail != importRoot {
+		t.Fatalf("expected unmanage log detail %q, got %q", importRoot, unmanageLog.Detail)
 	}
 }
 

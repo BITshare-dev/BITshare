@@ -110,7 +110,7 @@ func registerAdminRoutes(api *gin.RouterGroup, handlers *routeHandlers) {
 	adminProtected.DELETE(
 		"/imports/local/:folderID",
 		middleware.RequireSuperAdmin(),
-		handlers.imports.DeleteManagedDirectory,
+		handlers.imports.UnmanageManagedDirectory,
 	)
 	adminProtected.POST(
 		"/imports/local/:folderID/rescan",

@@ -300,9 +300,7 @@ function downloadResource(row: DirectoryRow) {
   link.remove();
 
   applyDownloadCountUpdate(row);
-  if (row.kind === "folder") {
-    void loadHotDownloads();
-  }
+  void loadHotDownloads();
 }
 
 function selectionKey(row: DirectoryRow) {
@@ -510,7 +508,7 @@ function openHotDownloadsModal() {
   openSidebarDetailModal({
     eyebrow: "Hot Downloads",
     title: "热门下载",
-    description: "展示当前下载量最高的前 20 份资料，点击标题可跳转文件详情页。",
+    description: "展示近七天内下载量最高的前 20 份资料，点击可跳转文件详情页。",
     items: hotDownloadItems.value.map((item) => ({
       id: item.id,
       label: item.name,
@@ -906,20 +904,15 @@ async function submitUpload() {
 
 function applyDownloadCountUpdate(row: DirectoryRow) {
   if (row.kind === "file") {
-    let nextDownloadCount = 0;
     files.value = files.value.map((item) => {
       if (item.id !== row.id) {
         return item;
       }
-      nextDownloadCount = item.download_count + 1;
       return {
         ...item,
-        download_count: nextDownloadCount,
+        download_count: item.download_count + 1,
       };
     });
-    if (nextDownloadCount > 0) {
-      syncHotDownloads(row.id, row.name, nextDownloadCount);
-    }
     return;
   }
 
@@ -932,32 +925,6 @@ function applyDownloadCountUpdate(row: DirectoryRow) {
       download_count: item.download_count + Math.max(1, item.file_count),
     };
   });
-}
-
-function syncHotDownloads(fileID: string, fileName: string, downloadCount: number) {
-  const next = [...hotDownloadItems.value];
-  const index = next.findIndex((item) => item.id === fileID);
-  if (index >= 0) {
-    next[index] = {
-      ...next[index],
-      name: fileName,
-      downloadCount,
-    };
-  } else {
-    next.push({
-      id: fileID,
-      name: fileName,
-      downloadCount,
-    });
-  }
-
-  next.sort((left, right) => {
-    if (right.downloadCount !== left.downloadCount) {
-      return right.downloadCount - left.downloadCount;
-    }
-    return left.name.localeCompare(right.name, "zh-CN");
-  });
-  hotDownloadItems.value = next.slice(0, 20);
 }
 
 function allowDownloadRequest() {

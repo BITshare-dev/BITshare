@@ -214,6 +214,15 @@ type DownloadEvent struct {
 	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime;index:idx_download_events_file_id_created_at,sort:desc;index:idx_download_events_created_at,sort:desc"`
 }
 
+// FileDailyDownload stores per-file daily download aggregates used by hot ranking.
+type FileDailyDownload struct {
+	FileID    EntityID  `gorm:"column:file_id;type:text;primaryKey"`
+	Day       string    `gorm:"column:day;type:text;primaryKey;index:idx_file_daily_downloads_day_file_id"`
+	Downloads int64     `gorm:"column:downloads;type:integer;not null;default:0"`
+	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime"`
+}
+
 // SystemStat stores dashboard-wide aggregate counters.
 type SystemStat struct {
 	Key                string    `gorm:"column:key;type:text;primaryKey"`
@@ -261,6 +270,9 @@ func (OperationLog) TableName() string   { return "operation_logs" }
 func (AdminSession) TableName() string   { return "admin_sessions" }
 func (SiteVisitEvent) TableName() string { return "site_visit_events" }
 func (DownloadEvent) TableName() string  { return "download_events" }
-func (SystemSetting) TableName() string  { return "system_settings" }
-func (SystemStat) TableName() string     { return "system_stats" }
-func (DailyStat) TableName() string      { return "daily_stats" }
+func (FileDailyDownload) TableName() string {
+	return "file_daily_downloads"
+}
+func (SystemSetting) TableName() string { return "system_settings" }
+func (SystemStat) TableName() string    { return "system_stats" }
+func (DailyStat) TableName() string     { return "daily_stats" }

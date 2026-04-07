@@ -118,7 +118,25 @@ func (s *PublicCatalogService) ListPublicFolderFiles(ctx context.Context, input 
 }
 
 func (s *PublicCatalogService) ListHotFiles(ctx context.Context, limit int) (*PublicFileFeedResult, error) {
-	return s.listManagedFileFeed(ctx, limit, []string{"download_count DESC", "created_at DESC", "id DESC"})
+	normalizedLimit := limit
+	if normalizedLimit <= 0 {
+		normalizedLimit = 20
+	}
+	if normalizedLimit > maxPublicFilePageSize {
+		normalizedLimit = maxPublicFilePageSize
+	}
+
+	files, err := s.repository.ListRecentHotManagedFiles(ctx, repository.PublicHotFileFeedQuery{
+		SinceDay: time.Now().UTC().AddDate(0, 0, -6).Format("2006-01-02"),
+		Limit:    normalizedLimit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list recent hot managed files: %w", err)
+	}
+
+	return &PublicFileFeedResult{
+		Items: mapPublicFileItems(files),
+	}, nil
 }
 
 func (s *PublicCatalogService) ListLatestFiles(ctx context.Context, limit int) (*PublicFileFeedResult, error) {

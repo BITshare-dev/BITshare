@@ -26,6 +26,11 @@ type PublicFileFeedQuery struct {
 	OrderBy []string
 }
 
+type PublicHotFileFeedQuery struct {
+	SinceDay string
+	Limit    int
+}
+
 type PublicFolderRow struct {
 	ID            string
 	ParentID      *string
@@ -73,6 +78,28 @@ func (r *PublicCatalogRepository) ListManagedFileFeed(ctx context.Context, query
 	var files []model.File
 	if err := listQuery.Limit(query.Limit).Find(&files).Error; err != nil {
 		return nil, fmt.Errorf("list managed file feed: %w", err)
+	}
+	return files, nil
+}
+
+func (r *PublicCatalogRepository) ListRecentHotManagedFiles(ctx context.Context, query PublicHotFileFeedQuery) ([]model.File, error) {
+	aggregated := r.db.WithContext(ctx).
+		Model(&model.FileDailyDownload{}).
+		Select("file_id, SUM(downloads) AS hot_downloads").
+		Where("day >= ?", query.SinceDay).
+		Group("file_id")
+
+	var files []model.File
+	if err := r.db.WithContext(ctx).
+		Model(&model.File{}).
+		Select("files.*").
+		Joins("JOIN (?) AS hot ON hot.file_id = files.id", aggregated).
+		Order("hot.hot_downloads DESC").
+		Order("files.created_at DESC").
+		Order("files.id DESC").
+		Limit(query.Limit).
+		Find(&files).Error; err != nil {
+		return nil, fmt.Errorf("list recent hot managed files: %w", err)
 	}
 	return files, nil
 }

@@ -42,6 +42,7 @@ func TestPublicDownloadServesManagedFile(t *testing.T) {
 	}
 
 	assertEventuallyDownloadCount(t, db, file.ID, 1)
+	assertEventuallyRecentFileHotDownloads(t, db, file.ID, 1)
 }
 
 func TestPublicDownloadReturnsGoneWhenRepositoryFileMissing(t *testing.T) {
@@ -272,4 +273,24 @@ func assertEventuallyDownloadCount(t *testing.T, db *gorm.DB, fileID string, exp
 		t.Fatalf("reload file failed: %v", err)
 	}
 	t.Fatalf("expected download_count=%d, got %d", expected, file.DownloadCount)
+}
+
+func assertEventuallyRecentFileHotDownloads(t *testing.T, db *gorm.DB, fileID string, expected int64) {
+	t.Helper()
+
+	day := time.Now().UTC().Format("2006-01-02")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var row model.FileDailyDownload
+		if err := db.Where("file_id = ? AND day = ?", fileID, day).Take(&row).Error; err == nil && row.Downloads == expected {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	var row model.FileDailyDownload
+	if err := db.Where("file_id = ? AND day = ?", fileID, day).Take(&row).Error; err != nil {
+		t.Fatalf("reload file daily downloads failed: %v", err)
+	}
+	t.Fatalf("expected recent hot downloads=%d, got %d", expected, row.Downloads)
 }

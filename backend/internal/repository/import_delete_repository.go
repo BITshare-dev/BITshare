@@ -10,8 +10,24 @@ import (
 	"openshare/backend/internal/model"
 )
 
-func (r *ImportRepository) DeleteManagedRootWithLog(ctx context.Context, rootFolderID, operatorID, operatorIP, detail, logID string, now time.Time) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+type ManagedRootUnmanageResult struct {
+	PendingStagingPaths []string
+}
+
+type dateCountStat struct {
+	Day   string
+	Count int64
+}
+
+type managedRootCleanupStats struct {
+	PendingStagingPaths []string
+	PendingSubmissions  int64
+	PendingFeedbacks    int64
+}
+
+func (r *ImportRepository) UnmanageManagedRootWithLog(ctx context.Context, rootFolderID, operatorID, operatorIP, detail, logID string, now time.Time) (*ManagedRootUnmanageResult, error) {
+	result := &ManagedRootUnmanageResult{}
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var folders []FolderTreeFolderRow
 		if err := tx.Model(&model.Folder{}).
 			Select("id, parent_id, name, source_path").
@@ -62,11 +78,7 @@ func (r *ImportRepository) DeleteManagedRootWithLog(ctx context.Context, rootFol
 			return fmt.Errorf("aggregate files for deletion: %w", err)
 		}
 
-		type dayStat struct {
-			Day   string
-			Count int64
-		}
-		var createdDayStats []dayStat
+		var createdDayStats []dateCountStat
 		if err := tx.Model(&model.File{}).
 			Select("DATE(created_at) AS day, COUNT(*) AS count").
 			Where("folder_id IN ?", folderIDs).
@@ -75,15 +87,22 @@ func (r *ImportRepository) DeleteManagedRootWithLog(ctx context.Context, rootFol
 			return fmt.Errorf("aggregate file day stats for deletion: %w", err)
 		}
 
+		cleanupStats, err := collectManagedRootCleanupStatsTx(tx, fileIDs, folderIDs)
+		if err != nil {
+			return err
+		}
+		result.PendingStagingPaths = cleanupStats.PendingStagingPaths
+
+		if err := linkedManagedResourceScope(tx, fileIDs, folderIDs).Delete(&model.Submission{}).Error; err != nil {
+			return fmt.Errorf("delete submissions: %w", err)
+		}
+		if err := linkedManagedResourceScope(tx, fileIDs, folderIDs).Delete(&model.Feedback{}).Error; err != nil {
+			return fmt.Errorf("delete feedbacks: %w", err)
+		}
 		if len(fileIDs) > 0 {
-			if err := detachDeletedResourcesTx(tx, fileIDs, folderIDs); err != nil {
-				return err
-			}
 			if err := tx.Where("folder_id IN ?", folderIDs).Delete(&model.File{}).Error; err != nil {
 				return fmt.Errorf("delete files: %w", err)
 			}
-		} else if err := detachDeletedResourcesTx(tx, nil, folderIDs); err != nil {
-			return err
 		}
 
 		if err := tx.Where("id IN ?", folderIDs).Delete(&model.Folder{}).Error; err != nil {
@@ -105,6 +124,65 @@ func (r *ImportRepository) DeleteManagedRootWithLog(ctx context.Context, rootFol
 			}
 		}
 
-		return createOperationLogTx(tx, logID, operatorID, "managed_directory_deleted", "folder", rootFolderID, detail, operatorIP, now)
+		if cleanupStats.PendingSubmissions > 0 || cleanupStats.PendingFeedbacks > 0 {
+			if err := model.AdjustSystemStatsTx(tx, model.SystemStatsDelta{
+				PendingSubmissions: -cleanupStats.PendingSubmissions,
+				PendingFeedbacks:   -cleanupStats.PendingFeedbacks,
+			}); err != nil {
+				return fmt.Errorf("adjust unmanaged directory system stats: %w", err)
+			}
+		}
+
+		return createOperationLogTx(tx, logID, operatorID, "managed_directory_unmanaged", "folder", rootFolderID, detail, operatorIP, now)
 	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func collectManagedRootCleanupStatsTx(tx *gorm.DB, fileIDs []string, folderIDs []string) (*managedRootCleanupStats, error) {
+	stats := &managedRootCleanupStats{}
+
+	if err := linkedManagedResourceScope(tx.Model(&model.Submission{}), fileIDs, folderIDs).
+		Where("status = ?", model.SubmissionStatusPending).
+		Distinct("id").
+		Count(&stats.PendingSubmissions).Error; err != nil {
+		return nil, fmt.Errorf("count pending submissions: %w", err)
+	}
+	if err := linkedManagedResourceScope(tx.Model(&model.Submission{}), fileIDs, folderIDs).
+		Where("status = ?", model.SubmissionStatusPending).
+		Where("TRIM(staging_path) <> ''").
+		Distinct("staging_path").
+		Pluck("staging_path", &stats.PendingStagingPaths).Error; err != nil {
+		return nil, fmt.Errorf("list pending staging paths: %w", err)
+	}
+	if err := linkedManagedResourceScope(tx.Model(&model.Feedback{}), fileIDs, folderIDs).
+		Where("status = ?", model.FeedbackStatusPending).
+		Distinct("id").
+		Count(&stats.PendingFeedbacks).Error; err != nil {
+		return nil, fmt.Errorf("count pending feedbacks: %w", err)
+	}
+
+	return stats, nil
+}
+
+func linkedManagedResourceScope(tx *gorm.DB, fileIDs []string, folderIDs []string) *gorm.DB {
+	hasCondition := false
+	if len(folderIDs) > 0 {
+		tx = tx.Where("folder_id IN ?", folderIDs)
+		hasCondition = true
+	}
+	if len(fileIDs) > 0 {
+		if hasCondition {
+			tx = tx.Or("file_id IN ?", fileIDs)
+		} else {
+			tx = tx.Where("file_id IN ?", fileIDs)
+			hasCondition = true
+		}
+	}
+	if !hasCondition {
+		return tx.Where("1 = 0")
+	}
+	return tx
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"openshare/backend/internal/model"
 	"openshare/backend/pkg/identity"
@@ -101,11 +102,16 @@ func (r *PublicDownloadRepository) IncrementDownloadCount(ctx context.Context, f
 			return fmt.Errorf("generate download event id: %w", err)
 		}
 
+		now := time.Now().UTC()
 		if err := tx.Create(&model.DownloadEvent{
 			ID:        eventID,
 			FileID:    fileID,
-			CreatedAt: time.Now().UTC(),
+			CreatedAt: now,
 		}).Error; err != nil {
+			return err
+		}
+
+		if err := incrementFileDailyDownloadTx(tx, fileID, now, 1); err != nil {
 			return err
 		}
 
@@ -151,6 +157,20 @@ func (r *PublicDownloadRepository) IncrementDownloadCounts(ctx context.Context, 
 			return err
 		}
 
+		downloadDeltaByFile := make(map[string]int64)
+		for _, fileID := range fileIDs {
+			normalized := strings.TrimSpace(fileID)
+			if normalized == "" {
+				continue
+			}
+			downloadDeltaByFile[normalized]++
+		}
+		for fileID, delta := range downloadDeltaByFile {
+			if err := incrementFileDailyDownloadTx(tx, fileID, now, delta); err != nil {
+				return err
+			}
+		}
+
 		downloadDeltaByFolder := make(map[string]int64)
 		for _, file := range files {
 			if file.FolderID == nil || strings.TrimSpace(*file.FolderID) == "" {
@@ -168,6 +188,28 @@ func (r *PublicDownloadRepository) IncrementDownloadCounts(ctx context.Context, 
 
 		return nil
 	})
+}
+
+func incrementFileDailyDownloadTx(tx *gorm.DB, fileID string, at time.Time, delta int64) error {
+	if tx == nil || strings.TrimSpace(fileID) == "" || delta == 0 {
+		return nil
+	}
+
+	now := time.Now().UTC()
+	row := model.FileDailyDownload{
+		FileID:    strings.TrimSpace(fileID),
+		Day:       at.UTC().Format("2006-01-02"),
+		Downloads: delta,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	return tx.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "file_id"}, {Name: "day"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"downloads":  gorm.Expr("downloads + ?", delta),
+			"updated_at": now,
+		}),
+	}).Create(&row).Error
 }
 
 func (r *PublicDownloadRepository) ListManagedFilesByIDs(ctx context.Context, fileIDs []string) ([]model.File, error) {
